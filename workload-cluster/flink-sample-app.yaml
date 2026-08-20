@@ -1,0 +1,90 @@
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkDeployment
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"flink.apache.org/v1beta1","kind":"FlinkDeployment","metadata":{"annotations":{},"name":"sample-statemachine","namespace":"flink"},"spec":{"flinkConfiguration":{"execution.checkpointing.interval":"10s","metrics.reporter.prom.factory.class":"org.apache.flink.metrics.prometheus.PrometheusReporterFactory","metrics.reporter.prom.port":"9249-9250","state.checkpoints.dir":"file:///tmp/flink-checkpoints","taskmanager.numberOfTaskSlots":"1"},"flinkVersion":"v1_18","image":"flink:1.18","imagePullPolicy":"IfNotPresent","job":{"jarURI":"local:///opt/flink/examples/streaming/StateMachineExample.jar","parallelism":1,"upgradeMode":"stateless"},"jobManager":{"resource":{"cpu":0.5,"memory":"1024m"}},"podTemplate":{"spec":{"containers":[{"name":"flink-main-container","ports":[{"containerPort":9249,"name":"prom-metrics"}]}]}},"serviceAccount":"flink","taskManager":{"resource":{"cpu":0.5,"memory":"1024m"}}}}
+  creationTimestamp: "2026-08-12T04:38:42Z"
+  finalizers:
+  - flinkdeployments.flink.apache.org/finalizer
+  generation: 3
+  labels:
+    domain: platform
+    owner: team-platform
+    pipeline_id: sample_statemachine
+    tier: P2
+  name: sample-statemachine
+  namespace: flink
+  resourceVersion: "24778763"
+  uid: 258edc21-8b94-4e34-a4b7-0bc0e87ba8bc
+spec:
+  flinkConfiguration:
+    execution.checkpointing.interval: 10s
+    metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+    metrics.reporter.prom.port: 9249-9250
+    state.checkpoints.dir: file:///tmp/flink-checkpoints
+    taskmanager.numberOfTaskSlots: "1"
+  flinkVersion: v1_18
+  image: flink:1.18
+  imagePullPolicy: IfNotPresent
+  job:
+    jarURI: local:///opt/flink/examples/streaming/StateMachineExample.jar
+    parallelism: 1
+    upgradeMode: stateless
+  jobManager:
+    resource:
+      cpu: 0.5
+      memory: 1024m
+  podTemplate:
+    metadata:
+      labels:
+        domain: platform
+        owner: team-platform
+        pipeline_id: sample_statemachine
+        tier: P2
+    spec:
+      containers:
+      - name: flink-main-container
+        ports:
+        - containerPort: 9249
+          name: prom-metrics
+  serviceAccount: flink
+  taskManager:
+    resource:
+      cpu: 0.5
+      memory: 1024m
+status:
+  clusterInfo:
+    flink-revision: a8c8b1c @ 2023-12-19T22:17:36+01:00
+    flink-version: 1.18.1
+    state-size: "8603"
+    total-cpu: "0.5"
+    total-memory: "1073741824"
+  conditions:
+  - lastTransitionTime: "2026-08-12T11:13:37.396200645Z"
+    message: Job status CREATED
+    reason: Created
+    status: "False"
+    type: Running
+  jobManagerDeploymentStatus: READY
+  jobStatus:
+    checkpointInfo:
+      lastPeriodicCheckpointTimestamp: 0
+    jobId: fd6e5d669763a83b6718d6f921aff299
+    jobName: State machine job
+    savepointInfo:
+      lastPeriodicSavepointTimestamp: 0
+      savepointHistory: []
+    startTime: "1786533272246"
+    state: CREATED
+    updateTime: "1786533282350"
+  lifecycleState: DEPLOYED
+  observedGeneration: 3
+  reconciliationStatus:
+    lastReconciledSpec: '{"spec":{"job":{"jarURI":"local:///opt/flink/examples/streaming/StateMachineExample.jar","parallelism":1,"entryClass":null,"args":[],"state":"running","savepointTriggerNonce":null,"initialSavepointPath":null,"checkpointTriggerNonce":null,"upgradeMode":"stateless","allowNonRestoredState":null,"savepointRedeployNonce":null,"autoscalerResetNonce":null},"restartNonce":null,"flinkConfiguration":{"execution.checkpointing.interval":"10s","metrics.reporter.prom.factory.class":"org.apache.flink.metrics.prometheus.PrometheusReporterFactory","metrics.reporter.prom.port":"9249-9250","state.checkpoints.dir":"file:///tmp/flink-checkpoints","taskmanager.numberOfTaskSlots":"1"},"image":"flink:1.18","imagePullPolicy":"IfNotPresent","serviceAccount":"flink","flinkVersion":"v1_18","ingress":null,"podTemplate":{"metadata":{"labels":{"domain":"platform","owner":"team-platform","pipeline_id":"sample_statemachine","tier":"P2"}},"spec":{"containers":[{"name":"flink-main-container","ports":[{"containerPort":9249,"name":"prom-metrics"}]}]}},"jobManager":{"resource":{"cpu":0.5,"memory":"1024m","ephemeralStorage":null},"replicas":1,"podTemplate":null},"taskManager":{"resource":{"cpu":0.5,"memory":"1024m","ephemeralStorage":null},"replicas":null,"podTemplate":null},"logConfiguration":null,"mode":null},"resource_metadata":{"apiVersion":"flink.apache.org/v1beta1","firstDeployment":false}}'
+    lastStableSpec: '{"spec":{"job":{"jarURI":"local:///opt/flink/examples/streaming/StateMachineExample.jar","parallelism":1,"entryClass":null,"args":[],"state":"running","savepointTriggerNonce":null,"initialSavepointPath":null,"checkpointTriggerNonce":null,"upgradeMode":"stateless","allowNonRestoredState":null,"savepointRedeployNonce":null,"autoscalerResetNonce":null},"restartNonce":null,"flinkConfiguration":{"execution.checkpointing.interval":"10s","metrics.reporter.prom.factory.class":"org.apache.flink.metrics.prometheus.PrometheusReporterFactory","metrics.reporter.prom.port":"9249-9250","state.checkpoints.dir":"file:///tmp/flink-checkpoints","taskmanager.numberOfTaskSlots":"1"},"image":"flink:1.18","imagePullPolicy":"IfNotPresent","serviceAccount":"flink","flinkVersion":"v1_18","ingress":null,"podTemplate":{"spec":{"containers":[{"name":"flink-main-container","ports":[{"containerPort":9249,"name":"prom-metrics"}]}]}},"jobManager":{"resource":{"cpu":0.5,"memory":"1024m","ephemeralStorage":null},"replicas":1,"podTemplate":null},"taskManager":{"resource":{"cpu":0.5,"memory":"1024m","ephemeralStorage":null},"replicas":null,"podTemplate":null},"logConfiguration":null,"mode":null},"resource_metadata":{"apiVersion":"flink.apache.org/v1beta1","firstDeployment":false}}'
+    reconciliationTimestamp: 1786533220415
+    state: DEPLOYED
+  taskManager:
+    labelSelector: component=taskmanager,app=sample-statemachine
+    replicas: 1

@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: marquez-web
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: marquez-web }
+  template:
+    metadata:
+      labels: { app: marquez-web }
+    spec:
+      containers:
+        - name: marquez-web
+          image: marquezproject/marquez-web:0.50.0
+          env:
+            - name: MARQUEZ_HOST
+              value: marquez.monitoring.svc.cluster.local
+            - name: MARQUEZ_PORT
+              value: "5000"
+            - name: WEB_PORT
+              value: "3000"
+          ports: [{ containerPort: 3000, name: http }]
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: marquez-web
+  namespace: monitoring
+  labels: { app: marquez-web }
+spec:
+  type: NodePort
+  selector: { app: marquez-web }
+  ports:
+    - port: 3000
+      targetPort: 3000
+      nodePort: 30501
+      name: http

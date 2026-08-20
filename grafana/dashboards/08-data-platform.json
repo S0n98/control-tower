@@ -1,0 +1,407 @@
+{
+  "title": "Data Platform Services",
+  "uid": "data-platform-services",
+  "tags": [
+    "pipeline",
+    "control-tower",
+    "platform"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "type": "text",
+      "title": "Scope note",
+      "description": "Explains why Trino/MinIO/Nessie/Ranger only show blackbox probe health here, not native service metrics.",
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Trino, MinIO, Nessie and Ranger are all real, running services in this environment, but none expose Prometheus metrics out of the box in their current config: **Trino** needs a JMX exporter sidecar; **MinIO** needs `MINIO_PROMETHEUS_AUTH_TYPE=public` set on its Operator-managed Tenant CRD (a plain StatefulSet env patch gets reconciled away by minio-operator - tried, reverted); **Nessie**'s `/q/metrics` Quarkus extension isn't bundled in this image. Health here is therefore the same blackbox HTTP probe used on the L1 tiles, not deep native metrics - that's a real follow-up, not simulated data."
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Trino",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 3
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "probe_success{instance=~\".*trino.*\"}"
+        }
+      ],
+      "description": "No NodePort exposed for Trino's UI in this environment - ClusterIP only, reachable in-cluster at trino.default.svc.cluster.local:8080.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "HEALTHY",
+                  "color": "green"
+                },
+                "0": {
+                  "text": "DOWN",
+                  "color": "red"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "MinIO",
+      "description": "Blackbox HTTP probe health (probe_success) for MinIO's endpoint - not native MinIO metrics, see the Scope note above.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 3
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "probe_success{instance=~\".*minio.*\"}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "HEALTHY",
+                  "color": "green"
+                },
+                "0": {
+                  "text": "DOWN",
+                  "color": "red"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Nessie",
+      "description": "Blackbox HTTP probe health (probe_success) for Nessie's endpoint - not native Nessie metrics, see the Scope note above.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 3
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "probe_success{instance=~\".*nessie.*\"}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "HEALTHY",
+                  "color": "green"
+                },
+                "0": {
+                  "text": "DOWN",
+                  "color": "red"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Ranger",
+      "description": "Blackbox HTTP probe health (probe_success) for Ranger's endpoint - not native Ranger metrics, see the Scope note above.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 3
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "probe_success{instance=~\".*ranger.*\"}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "HEALTHY",
+                  "color": "green"
+                },
+                "0": {
+                  "text": "DOWN",
+                  "color": "red"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Node status",
+      "description": "Percentage of node-exporter targets reporting up, in the same HEALTHY/DEGRADED/DOWN visual language as the L1 Control Tower's PLATFORM tile. Click through to the full Node Exporter dashboard for per-node CPU/memory/disk/network detail.",
+      "gridPos": {
+        "h": 6,
+        "w": 16,
+        "x": 0,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "avg(up{job=\"node-exporter\"}) * 100",
+          "instant": true
+        }
+      ],
+      "options": {
+        "graphMode": "none",
+        "textMode": "value",
+        "colorMode": "background",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 50 },
+              { "color": "green", "value": 100 }
+            ]
+          },
+          "mappings": [
+            { "type": "value", "options": { "100": { "text": "🟢 ALL NODES UP" } } },
+            { "type": "range", "options": { "from": 50, "to": 99.999, "result": { "text": "🟡 NODES DEGRADED" } } },
+            { "type": "range", "options": { "from": 0, "to": 49.999, "result": { "text": "🔴 NODES DOWN" } } }
+          ]
+        },
+        "overrides": []
+      },
+      "links": [
+        {
+          "title": "Open Node Exporter dashboard",
+          "url": "/d/7d57716318ee0dddbac5a7f451fb7753",
+          "targetBlank": false
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Nodes up / total",
+      "description": "Exact counts behind the Node status badge - how many node-exporter targets are up out of how many are known.",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count(up{job=\"node-exporter\"} == 1)",
+          "legendFormat": "up",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "expr": "count(up{job=\"node-exporter\"})",
+          "legendFormat": "total",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "up"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "total"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "links": [
+        {
+          "title": "Open Node Exporter dashboard",
+          "url": "/d/7d57716318ee0dddbac5a7f451fb7753",
+          "targetBlank": false
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Iceberg tables known to this environment (via dataset_state)",
+      "description": "Populated by the DQ Tier-A collector's Trino queries (dq/dq_tier_a_dag.py), not a live catalog browse - the closest real signal to \"what's in the lakehouse\" available without a Trino metrics integration.",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT dataset, row_count, updated_at, round((freshness_s / 60.0)::numeric, 1) AS freshness_minutes FROM dataset_state ORDER BY dataset"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Probe response time",
+      "description": "Blackbox probe latency (probe_duration_seconds) for Trino/MinIO/Nessie/Ranger - a rising trend here often precedes a probe going fully down.",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "probe_duration_seconds{instance=~\".*(trino|minio|nessie|ranger).*\"}",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": false,
+              "__name__": true,
+              "job": true
+            },
+            "renameByName": {
+              "Value": "response_time_s"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

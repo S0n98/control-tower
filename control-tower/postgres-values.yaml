@@ -1,0 +1,83 @@
+# Dedicated Postgres for the Control Tower - deliberately NOT shared with
+# Airflow's/Ranger's/Superset's metadata DBs (plan §4.2: SLA/DQ/lineage facts
+# get their own store with its own retention, not bolted onto another
+# component's schema).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: control-tower-postgres-credentials
+  namespace: monitoring
+type: Opaque
+stringData:
+  POSTGRES_USER: control_tower
+  POSTGRES_PASSWORD: ControlTowerObs2026!
+  POSTGRES_DB: control_tower
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: control-tower-postgres-data
+  namespace: monitoring
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: nfs-client
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: control-tower-postgres
+  namespace: monitoring
+spec:
+  serviceName: control-tower-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: control-tower-postgres
+  template:
+    metadata:
+      labels:
+        app: control-tower-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          envFrom:
+            - secretRef:
+                name: control-tower-postgres-credentials
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - containerPort: 5432
+              name: postgres
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 512Mi }
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "control_tower"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: control-tower-postgres-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: control-tower-postgres
+  namespace: monitoring
+spec:
+  selector:
+    app: control-tower-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+      name: postgres

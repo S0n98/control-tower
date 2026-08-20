@@ -1,0 +1,123 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: control-tower
+  namespace: monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: control-tower-reader
+rules:
+  - apiGroups: ["sparkoperator.k8s.io"]
+    resources: ["sparkapplications"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["flink.apache.org"]
+    resources: ["flinkdeployments"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: control-tower-reader
+subjects:
+  - kind: ServiceAccount
+    name: control-tower
+    namespace: monitoring
+roleRef:
+  kind: ClusterRole
+  name: control-tower-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: control-tower-dsn
+  namespace: monitoring
+type: Opaque
+stringData:
+  CONTROL_TOWER_DSN: "postgresql://control_tower:ControlTowerObs2026!@control-tower-postgres.monitoring.svc.cluster.local:5432/control_tower"
+  AIRFLOW_DSN: "postgresql://control_tower_ro:ControlTowerRO2026!@airflow-postgresql.airflow.svc.cluster.local:5432/postgres"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: control-tower
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: control-tower
+  template:
+    metadata:
+      labels:
+        app: control-tower
+      annotations:
+        pipeline_id: control_tower
+        domain: platform
+        tier: "P1"
+        owner: team-platform
+    spec:
+      serviceAccountName: control-tower
+      containers:
+        - name: control-tower
+          image: docker.io/library/control-tower:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+              name: http
+          envFrom:
+            - secretRef:
+                name: control-tower-dsn
+          env:
+            - name: REGISTRY_DIR
+              value: /registry
+            - name: NIFI_BASE_URL
+              value: "https://nifi.nifi.svc.cluster.local:8443"
+            - name: NIFI_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: nifi-prometheus-token
+                  key: token
+            - name: NIFI_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: nifi-credentials
+                  key: username
+            - name: NIFI_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: nifi-credentials
+                  key: password
+          volumeMounts:
+            - name: registry
+              mountPath: /registry
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { memory: 256Mi }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8000 }
+            initialDelaySeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8000 }
+            initialDelaySeconds: 15
+      volumes:
+        - name: registry
+          configMap:
+            name: control-tower-registry
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: control-tower
+  namespace: monitoring
+  labels:
+    app: control-tower
+spec:
+  selector:
+    app: control-tower
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http

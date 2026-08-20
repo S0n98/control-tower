@@ -1,0 +1,43 @@
+# Grafana Agent (static mode) config for the NiFi VM.
+# Installed as a systemd service: https://grafana.com/docs/agent/latest/static/set-up/install/linux/
+# Config path: /etc/grafana-agent.yaml
+#
+# Scrapes two local targets:
+#   1. NiFi's own PrometheusReportingTask endpoint (JVM, queue depth, processor throughput)
+#   2. The bulletin-board exporter (see nifi_bulletin_exporter.py) for WARN/ERROR events,
+#      which the reporting task does NOT cover.
+# Then remote_writes everything to the central Prometheus in the monitoring cluster.
+
+server:
+  log_level: info
+
+metrics:
+  global:
+    scrape_interval: 30s
+    remote_write:
+      - url: "https://prometheus.monitoring.example.internal/api/v1/write"
+        basic_auth:
+          username: nifi-vm
+          password_file: /etc/grafana-agent/remote-write-password   # fill in; don't inline the secret
+  configs:
+    - name: nifi
+      scrape_configs:
+        - job_name: nifi-reporting-task
+          static_configs:
+            - targets: ["localhost:9092"]   # port configured on the PrometheusReportingTask
+              labels:
+                system: nifi
+                instance: nifi-vm-01   # set to this VM's hostname/identifier
+        - job_name: nifi-bulletin-exporter
+          static_configs:
+            - targets: ["localhost:9622"]   # port the bulletin exporter script listens on
+              labels:
+                system: nifi
+                instance: nifi-vm-01
+
+# --- NiFi-side setup required (once, via NiFi UI or nifi.properties) ---
+# Add a PrometheusReportingTask:
+#   Controller Settings > Reporting Tasks > + > PrometheusReportingTask
+#   Metrics Reporting Port: 9092
+#   Send JVM Metrics: true
+# Start it. Verify with: curl http://localhost:9092/metrics

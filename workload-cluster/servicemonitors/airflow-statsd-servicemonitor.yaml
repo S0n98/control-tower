@@ -1,0 +1,27 @@
+# Airflow emits metrics over StatsD; statsd_exporter translates them to Prometheus
+# format. The official apache/airflow Helm chart bundles this — enable it via:
+#
+#   # airflow-statsd-values.yaml (merge into your existing Airflow Helm values)
+#   statsd:
+#     enabled: true
+#     # image: {repository: prom/statsd-exporter, tag: v0.26.1}
+#
+# This creates a Service (default name "<release-name>-statsd") exposing the
+# exporter's /metrics on port 9102. Point the selector/namespace below at your
+# actual Airflow Helm release name/namespace.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: airflow-statsd
+  namespace: monitoring
+  labels:
+    release: kube-prom-agent
+spec:
+  namespaceSelector:
+    matchNames: ["airflow"]   # adjust to the Airflow namespace
+  selector:
+    matchLabels:
+      component: statsd   # label the official chart puts on the statsd-exporter Service
+  endpoints:
+    - port: statsd-scrape   # chart's port name for the /metrics endpoint
+      interval: 30s

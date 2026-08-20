@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: control-tower-postgres-datasource
+  namespace: monitoring
+  labels:
+    grafana_datasource: "1"
+type: Opaque
+stringData:
+  control-tower-postgres-datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Control Tower (Postgres)
+        uid: control-tower-postgres
+        type: postgres
+        access: proxy
+        url: control-tower-postgres.monitoring.svc.cluster.local:5432
+        database: control_tower
+        user: control_tower
+        secureJsonData:
+          password: ControlTowerObs2026!
+        jsonData:
+          database: control_tower
+          sslmode: disable
+          postgresVersion: 1600
+          timescaledb: false

@@ -1,0 +1,102 @@
+# PrometheusRule CRD, applied in the monitoring cluster (evaluated centrally against
+# the unified series arriving via remote_write from both spokes).
+#
+# `severity: page` routes to on-call via Alertmanager (see alertmanager-config.yaml);
+# `severity: warning` is dashboard/Slack-only. Deploy this AFTER dashboards are built
+# and each underlying metric has been manually verified to exist and behave as
+# expected (see plan's Verification section) — alerting on unverified exporters
+# just produces false-positive noise.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: pipeline-observability-rules
+  namespace: monitoring
+  labels:
+    release: kube-prom-agent   # match whatever ruleSelector the central Prometheus uses
+spec:
+  groups:
+    - name: nifi.rules
+      rules:
+        - alert: NiFiQueueBackpressureSustained
+          expr: nifi_queued_percent > 80
+          for: 10m
+          labels: {severity: page, system: nifi}
+          annotations:
+            summary: "NiFi connection queue backpressured for 10+ minutes ({{ $labels.instance }})"
+            description: "Queue {{ $labels.connection_name }} has been above 80% capacity for 10m — downstream consumer is likely stalled or too slow."
+
+        - alert: NiFiJVMHeapHigh
+          expr: (nifi_jvm_heap_used / nifi_jvm_heap_max) > 0.85
+          for: 10m
+          labels: {severity: page, system: nifi}
+          annotations:
+            summary: "NiFi JVM heap usage above 85% sustained"
+
+        - alert: NiFiBulletinError
+          expr: increase(nifi_bulletin_seen_total{level="ERROR"}[5m]) > 0
+          labels: {severity: page, system: nifi}
+          annotations:
+            summary: "NiFi ERROR bulletin on {{ $labels.source_name }}"
+            description: "Process group {{ $labels.group_id }} reported an ERROR bulletin — check the NiFi UI bulletin board."
+
+        - alert: NiFiBulletinWarnTrend
+          expr: increase(nifi_bulletin_seen_total{level="WARN"}[30m]) > 10
+          labels: {severity: warning, system: nifi}
+          annotations:
+            summary: "NiFi WARN bulletins trending up on {{ $labels.source_name }}"
+
+    - name: spark.rules
+      rules:
+        - alert: SparkApplicationFailed
+          expr: increase(spark_application_failure_count[5m]) > 0
+          labels: {severity: page, system: spark}
+          annotations:
+            summary: "A SparkApplication failed (spark-operator controller-wide counter, not per-app - check the Spark dashboard for which app)"
+
+        - alert: SparkExecutorTaskFailures
+          expr: increase(metrics_executor_failedTasks_total[10m]) > 0
+          labels: {severity: page, system: spark}
+          annotations:
+            summary: "Spark executor task failures detected for {{ $labels.application_name }}/{{ $labels.executor_id }}"
+
+    - name: flink.rules
+      rules:
+        - alert: FlinkCheckpointFailuresConsecutive
+          expr: flink_jobmanager_job_numberOfFailedCheckpoints > 3
+          labels: {severity: page, system: flink}
+          annotations:
+            summary: "Flink job {{ $labels.job_name }} has 3+ consecutive checkpoint failures"
+
+        - alert: FlinkJobRestartLoop
+          expr: increase(flink_jobmanager_job_numRestarts[15m]) > 3
+          labels: {severity: page, system: flink}
+          annotations:
+            summary: "Flink job {{ $labels.job_name }} is restart-looping"
+
+        - alert: FlinkDeploymentNotRunning
+          expr: flink_kubernetes_operator_flinkdeployment_status{status!="RUNNING"} == 1
+          for: 5m
+          labels: {severity: page, system: flink}
+          annotations:
+            summary: "FlinkDeployment {{ $labels.name }} not in RUNNING state for 5m"
+
+    - name: airflow.rules
+      rules:
+        - alert: AirflowFlinkTriggerDAGFailed
+          expr: increase(airflow_dag_run_failed_total{dag_id="trigger_flink_job"}[5m]) > 0
+          labels: {severity: page, system: airflow}
+          annotations:
+            summary: "Airflow DAG that triggers the Flink job failed"
+            description: "Replace dag_id label value with the real DAG id once known — this is the orchestration seam between Airflow and Flink."
+
+        - alert: AirflowSchedulerHeartbeatMissed
+          expr: time() - airflow_scheduler_heartbeat_timestamp > 120
+          labels: {severity: page, system: airflow}
+          annotations:
+            summary: "Airflow scheduler heartbeat missed for 2+ minutes"
+
+        - alert: AirflowCriticalDAGSLAMiss
+          expr: increase(airflow_dag_sla_miss_total{dag_id=~"trigger_flink_job|.*critical.*"}[5m]) > 0
+          labels: {severity: page, system: airflow}
+          annotations:
+            summary: "SLA miss on critical Airflow DAG {{ $labels.dag_id }}"

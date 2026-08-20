@@ -1,0 +1,341 @@
+{
+  "title": "Data Quality Overview",
+  "uid": "dq-overview",
+  "tags": [
+    "pipeline",
+    "control-tower",
+    "dq"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Overall Quality Score (24h)",
+      "description": "Percentage of dq_result checks that passed in the last 24h, across all datasets and dimensions - defaults to 100% if no checks ran (absence of checks isn't treated as failure).",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT CASE WHEN count(*) = 0 THEN 100.0 ELSE round(100.0 * count(*) FILTER (WHERE status = 'pass') / count(*), 1) END FROM dq_result WHERE evaluated_at > now() - interval '24 hours'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 90
+              },
+              {
+                "color": "green",
+                "value": 98
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Datasets Checked",
+      "description": "Distinct datasets with at least one dq_result row in the last 24h.",
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 6,
+        "y": 0
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT count(DISTINCT dataset) FROM dq_result WHERE evaluated_at > now() - interval '24 hours'"
+        }
+      ],
+      "options": {
+        "graphMode": "none"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Checks Executed (24h)",
+      "description": "Total dq_result rows (individual check executions) in the last 24h, across all datasets and dimensions.",
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 10,
+        "y": 0
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT count(*) FROM dq_result WHERE evaluated_at > now() - interval '24 hours'"
+        }
+      ],
+      "options": {
+        "graphMode": "none"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Failed Checks (24h)",
+      "description": "Count of dq_result rows with status='fail' in the last 24h, across all dimensions (schema/freshness/volume/etc).",
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 14,
+        "y": 0
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT count(*) FROM dq_result WHERE evaluated_at > now() - interval '24 hours' AND status = 'fail'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "none",
+        "colorMode": "value"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Freshness Violations (24h)",
+      "description": "Failed checks specifically in the 'freshness' dimension - data that arrived, but later than its SLA target.",
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 18,
+        "y": 0
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT count(*) FROM dq_result WHERE evaluated_at > now() - interval '24 hours' AND dimension = 'freshness' AND status = 'fail'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "none",
+        "colorMode": "value"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Schema Changes (24h)",
+      "description": "Distinct schema signature hashes seen in the last 24h minus 1 (the baseline) - a change here means a table's column set/types shifted since the last check.",
+      "gridPos": {
+        "h": 6,
+        "w": 2,
+        "x": 22,
+        "y": 0
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT GREATEST(count(DISTINCT details->>'signature_hash') - 1, 0) FROM dq_result WHERE dimension = 'schema' AND evaluated_at > now() - interval '24 hours'"
+        }
+      ],
+      "options": {
+        "graphMode": "none"
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Quality by Domain (24h pass rate)",
+      "description": "24h dq_result pass rate grouped by the owning pipeline's business domain.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT p.domain, round(100.0 * count(*) FILTER (WHERE dq.status = 'pass') / GREATEST(count(*), 1), 1) AS pass_rate FROM dq_result dq JOIN pipeline p ON p.pipeline_id = dq.pipeline_id WHERE dq.evaluated_at > now() - interval '24 hours' GROUP BY p.domain ORDER BY p.domain"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 90
+              },
+              {
+                "color": "green",
+                "value": 98
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Quality by Dataset (24h pass rate)",
+      "description": "24h dq_result pass rate grouped by dataset - narrows down which specific table is dragging the overall score.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT dataset, round(100.0 * count(*) FILTER (WHERE status = 'pass') / GREATEST(count(*), 1), 1) AS pass_rate FROM dq_result WHERE evaluated_at > now() - interval '24 hours' GROUP BY dataset ORDER BY dataset"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 90
+              },
+              {
+                "color": "green",
+                "value": 98
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "table",
+      "title": "Failed Quality Checks (24h)",
+      "description": "Individual failing dq_result rows from the last 24h with observed vs threshold values - the detail behind the Failed Checks tile above.",
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT evaluated_at, dataset, check_name, dimension, observed, threshold FROM dq_result WHERE status = 'fail' AND evaluated_at > now() - interval '24 hours' ORDER BY evaluated_at DESC LIMIT 100"
+        }
+      ]
+    }
+  ]
+}

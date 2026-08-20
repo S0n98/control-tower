@@ -1,0 +1,135 @@
+# Marquez + its own Postgres (plan §6). Lineage stays reversible: everything
+# emitted speaks the OpenLineage protocol, so swapping the backend (e.g. to
+# OpenMetadata) later is a config change, not a redesign - plan §12.1.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: marquez-postgres-credentials
+  namespace: monitoring
+type: Opaque
+stringData:
+  # Marquez's bundled marquez.dev.yml hardcodes db.user=marquez / db.password=marquez
+  # (only POSTGRES_HOST/POSTGRES_PORT are actually templated from env) - matched here
+  # rather than fighting the image's default config.
+  POSTGRES_USER: marquez
+  POSTGRES_PASSWORD: marquez
+  POSTGRES_DB: marquez
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: marquez-postgres-data
+  namespace: monitoring
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: nfs-client
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: marquez-postgres
+  namespace: monitoring
+spec:
+  serviceName: marquez-postgres
+  replicas: 1
+  selector:
+    matchLabels: { app: marquez-postgres }
+  template:
+    metadata:
+      labels: { app: marquez-postgres }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          envFrom:
+            - secretRef: { name: marquez-postgres-credentials }
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports: [{ containerPort: 5432, name: postgres }]
+          volumeMounts: [{ name: data, mountPath: /var/lib/postgresql/data }]
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 512Mi }
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "marquez"] }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: marquez-postgres-data }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: marquez-postgres
+  namespace: monitoring
+spec:
+  selector: { app: marquez-postgres }
+  ports: [{ port: 5432, targetPort: 5432, name: postgres }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: marquez
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: marquez }
+  template:
+    metadata:
+      labels: { app: marquez }
+    spec:
+      containers:
+        - name: marquez
+          image: marquezproject/marquez:0.50.0
+          args: ["--migrate"]
+          env:
+            - name: MARQUEZ_PORT
+              value: "5000"
+            - name: MARQUEZ_ADMIN_PORT
+              value: "5001"
+            - name: POSTGRES_HOST
+              value: marquez-postgres.monitoring.svc.cluster.local
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: POSTGRES_DB
+              value: marquez
+            - name: POSTGRES_USER
+              value: marquez
+            - name: POSTGRES_PASSWORD
+              value: marquez
+          ports:
+            - containerPort: 5000
+              name: http
+            - containerPort: 5001
+              name: admin
+          readinessProbe:
+            httpGet: { path: /healthcheck, port: 5001 }
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: marquez
+  namespace: monitoring
+  labels: { app: marquez }
+spec:
+  type: NodePort
+  selector: { app: marquez }
+  ports:
+    - port: 5000
+      targetPort: 5000
+      nodePort: 30500
+      name: http
+    - port: 5001
+      targetPort: 5001
+      name: admin

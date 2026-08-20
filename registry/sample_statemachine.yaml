@@ -1,0 +1,14 @@
+pipeline_id: sample_statemachine
+domain: platform
+tier: P2
+owner: team-platform
+owner_email: team-platform@company.internal
+schedule: "continuous"
+sla:
+  freshness_target_minutes: 5
+components:
+  - type: flink
+    id: sample-statemachine
+    namespace: flink
+outputs: []
+upstream: []

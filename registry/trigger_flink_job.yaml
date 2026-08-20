@@ -1,0 +1,14 @@
+pipeline_id: trigger_flink_job
+domain: platform
+tier: P2
+owner: team-platform
+owner_email: team-platform@company.internal
+schedule: "*/5 * * * *"
+sla:
+  max_duration_minutes: 10
+components:
+  - type: airflow
+    id: trigger_flink_job
+    namespace: airflow
+outputs: []
+upstream: []

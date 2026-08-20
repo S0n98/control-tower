@@ -1,0 +1,209 @@
+{
+  "title": "Pipeline SLA",
+  "uid": "pipeline-sla",
+  "tags": [
+    "pipeline",
+    "control-tower",
+    "sla"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Current SLA Status",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Pipelines \u2014 current SLA state (0=ok, 1=at risk, 2=breached)",
+      "description": "Reads pipeline_current_sla_status (schema.sql) - the worst currently-active rule per pipeline across not_started/running_too_long/finished_late/freshness_breach/dq_failed/upstream_blocked.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 1
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT p.pipeline_id, CASE sla.overall_result WHEN 'breached' THEN 2 WHEN 'at_risk' THEN 1 ELSE 0 END AS state FROM pipeline p LEFT JOIN pipeline_current_sla_status sla ON sla.pipeline_id = p.pipeline_id WHERE p.enabled ORDER BY state DESC, p.pipeline_id"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "max": 2,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 2
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "lcd",
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "type": "row",
+      "title": "SLA Compliance \u2014 30 Days",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Daily SLA compliance % (all rule evaluations)",
+      "description": "Before this dashboard's build date, sla_engine only ever wrote a row on breach (no resolving 'ok' row) - so days before the fix show artificially low compliance, since only failures were ever recorded, not health. Trust this trend going forward from the fix date; treat earlier days as historically incomplete, not a real compliance drop.",
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 10
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('day', evaluated_at) AS time, round(100.0 * count(*) FILTER (WHERE result != 'breached') / GREATEST(count(*), 1), 2) AS compliance_pct FROM sla_evaluation WHERE evaluated_at > now() - interval '30 days' GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Per-Pipeline SLA Stats",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 19
+      }
+    },
+    {
+      "type": "table",
+      "title": "Duration vs SLA, and 30-day miss rate",
+      "description": "Per-pipeline average/p95 run duration and SLA miss rate over the last 30 days (sla_evaluation), next to each pipeline's configured SLA target - use this to spot pipelines trending toward breach even if they haven't breached yet.",
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 20
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "WITH dur AS (SELECT pipeline_id, round(avg(duration_s)) AS avg_duration_s, round(percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_s)) AS p95_duration_s, count(*) AS runs_30d FROM pipeline_run WHERE started_at > now() - interval '30 days' AND duration_s IS NOT NULL GROUP BY pipeline_id), miss AS (SELECT pipeline_id, round(100.0 * count(*) FILTER (WHERE result = 'breached') / GREATEST(count(*), 1), 2) AS miss_pct FROM sla_evaluation WHERE evaluated_at > now() - interval '30 days' GROUP BY pipeline_id) SELECT p.pipeline_id, p.tier, (p.sla_json->>'max_duration_minutes') AS sla_max_duration_min, (p.sla_json->>'freshness_target_minutes') AS sla_freshness_target_min, dur.avg_duration_s, dur.p95_duration_s, dur.runs_30d, COALESCE(miss.miss_pct, 0) AS miss_pct_30d FROM pipeline p LEFT JOIN dur ON dur.pipeline_id = p.pipeline_id LEFT JOIN miss ON miss.pipeline_id = p.pipeline_id WHERE p.enabled ORDER BY p.tier, p.pipeline_id"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "pipeline_id"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open Pipeline Detail",
+                    "url": "/d/pipeline-detail-l3?var-pipeline_id=${__value.text}"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "miss_pct_30d"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 5
+                    },
+                    {
+                      "color": "red",
+                      "value": 15
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,118 @@
+{
+  "title": "Data Freshness",
+  "uid": "dq-freshness",
+  "tags": [
+    "pipeline",
+    "control-tower",
+    "dq",
+    "freshness"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "type": "table",
+      "title": "Dataset freshness (expected vs actual)",
+      "description": "Catches the case where every upstream job reports SUCCESS but the underlying business data is actually stale (plan \u00a79's motivating example).",
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT ds.dataset, p.pipeline_id, (p.sla_json->>'freshness_target_minutes') AS target_minutes, round((ds.freshness_s / 60.0)::numeric, 1) AS actual_minutes, ds.row_count, ds.updated_at, CASE WHEN (p.sla_json->>'freshness_target_minutes') IS NULL THEN 'no target' WHEN ds.freshness_s / 60.0 > (p.sla_json->>'freshness_target_minutes')::float THEN 'STALE' ELSE 'FRESH' END AS status FROM dataset_state ds LEFT JOIN pipeline p ON p.outputs_json @> jsonb_build_array(jsonb_build_object('iceberg', ds.dataset)) ORDER BY ds.dataset"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "FRESH": {
+                        "text": "\ud83d\udfe2 FRESH",
+                        "color": "green"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "STALE": {
+                        "text": "\ud83d\udd34 STALE",
+                        "color": "red"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "no target": {
+                        "text": "\u26aa no target",
+                        "color": "text"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Freshness over time (minutes since last snapshot)",
+      "description": "Trend of the 'freshness' dimension's observed value (minutes since last update) per dataset over the last 6h, from dq_result - shows whether a dataset is drifting stale gradually or jumped suddenly.",
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT evaluated_at AS time, dataset, observed / 60.0 AS freshness_minutes FROM dq_result WHERE dimension = 'freshness' AND evaluated_at > now() - interval '6 hours' ORDER BY evaluated_at"
+        }
+      ]
+    }
+  ]
+}

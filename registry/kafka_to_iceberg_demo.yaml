@@ -1,0 +1,21 @@
+# Deliberately registered while broken - see registry/LABELLING-STANDARD.md.
+# No Kafka broker exists in this environment, so this FlinkDeployment can
+# never reach RUNNING. Kept registered (rather than deleted) so the SLA
+# breach / not_running alerting path has a real, permanently-red target to
+# validate against instead of only ever seeing green pipelines.
+pipeline_id: kafka_to_iceberg_demo
+domain: platform
+tier: P2
+owner: team-platform
+owner_email: team-platform@company.internal
+schedule: "continuous"
+sla:
+  freshness_target_minutes: 5
+components:
+  - type: flink
+    id: kafka-to-iceberg-demo
+    namespace: flink
+outputs:
+  - iceberg: "iceberg.demo.kafka_events"
+upstream:
+  - kafka_topic: "demo-events"   # declared edge - no Kafka exporter backs this, see lineage plan

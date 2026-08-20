@@ -1,0 +1,47 @@
+# Scrapes Flink JobManager/TaskManager pods managed by the Flink Kubernetes Operator.
+#
+# Requires each Flink job to load the Prometheus reporter:
+#   metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+#   metrics.reporter.prom.port: 9249-9250
+# (set in the FlinkDeployment's flinkConfiguration block)
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: flink-jobmanager-taskmanager
+  namespace: monitoring
+  labels:
+    release: kube-prom-agent
+spec:
+  namespaceSelector:
+    any: true
+  selector:
+    matchExpressions:
+      # Standard labels the Flink operator sets on JM/TM pods it creates.
+      # Verify against `kubectl get pods --show-labels` for your operator version —
+      # this has shifted across flink-kubernetes-operator releases.
+      - key: component
+        operator: In
+        values: ["jobmanager", "taskmanager"]
+  podMetricsEndpoints:
+    - port: metrics
+      path: /
+      interval: 30s
+---
+# The Flink Kubernetes Operator's own controller — reconciliation/JOSDK metrics.
+# This is a stable Deployment/Service, so ServiceMonitor (not PodMonitor) is correct.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: flink-kubernetes-operator
+  namespace: monitoring
+  labels:
+    release: kube-prom-agent
+spec:
+  namespaceSelector:
+    matchNames: ["flink-operator"]   # adjust to wherever the operator is installed
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: flink-kubernetes-operator
+  endpoints:
+    - port: metrics   # operator chart's metrics Service port name; default 8085
+      interval: 30s

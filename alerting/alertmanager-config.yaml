@@ -1,0 +1,78 @@
+# Alertmanager routing (plan §8). Grouped to avoid one bad deploy paging
+# ten times; P1 pages immediately with a short repeat, P2 tickets with a
+# longer repeat, P3/everything-else gets NO immediate email - the daily
+# digest CronJob (dq/daily-digest-cronjob.yaml, plan §4.6/§8) is how P3
+# actually reaches a human, by design (email-only + >100 pipelines means
+# immediate-paging everything guarantees alert fatigue - plan §11's #1 risk).
+global:
+  resolve_timeout: 5m
+  smtp_from: "control-tower@company.internal"
+  smtp_smarthost: "mailhog.monitoring.svc.cluster.local:1025"
+  smtp_require_tls: false
+
+templates:
+  - /etc/alertmanager/config/*.tmpl
+
+route:
+  receiver: "null"
+  group_by: ["domain", "alertname"]
+  group_wait: 60s
+  group_interval: 5m
+  repeat_interval: 24h
+  routes:
+    - matchers: ["alertname = Watchdog"]
+      receiver: "null"
+    - matchers: ["tier = dead-mans-switch"]
+      receiver: email-dead-mans-switch
+      group_wait: 0s
+      group_interval: 1h
+      repeat_interval: 1h
+    - matchers: ["tier = P1"]
+      receiver: email-p1-page
+      group_wait: 30s
+      repeat_interval: 4h
+      continue: false
+    - matchers: ["tier = P2"]
+      receiver: email-p2-ticket
+      repeat_interval: 24h
+      continue: false
+    # tier = P3 and anything unmatched (info/pending KubeContainerWaiting etc.)
+    # intentionally falls through to the default "null" receiver above -
+    # digest-only, per plan §8's severity table.
+
+inhibit_rules:
+  - source_matchers: ["severity = critical"]
+    target_matchers: ["severity =~ warning|info"]
+    equal: ["namespace", "alertname"]
+  - source_matchers: ["severity = warning"]
+    target_matchers: ["severity = info"]
+    equal: ["namespace", "alertname"]
+  - source_matchers: ["alertname = InfoInhibitor"]
+    target_matchers: ["severity = info"]
+    equal: ["namespace"]
+  - target_matchers: ["alertname = InfoInhibitor"]
+  # Control Tower down => every pipeline-derived alert is stale/untrustworthy,
+  # not independently confirmed broken - suppress rather than double-page.
+  - source_matchers: ["alertname = ControlTowerDown"]
+    target_matchers: ["alertname =~ PipelineSLABreached|PipelineFailed|PipelineUnregistered|DomainDQScoreLow"]
+
+receivers:
+  - name: "null"
+  - name: email-p1-page
+    email_configs:
+      - to: "{{ .CommonLabels.owner }}@company.internal"
+        send_resolved: true
+        headers:
+          Subject: "[P1 PAGE] {{ .CommonLabels.alertname }} - {{ .CommonLabels.pipeline_id }}"
+  - name: email-p2-ticket
+    email_configs:
+      - to: "{{ .CommonLabels.owner }}@company.internal"
+        send_resolved: true
+        headers:
+          Subject: "[P2] {{ .CommonLabels.alertname }} - {{ .CommonLabels.pipeline_id }}"
+  - name: email-dead-mans-switch
+    email_configs:
+      - to: "oncall@company.internal"
+        send_resolved: false
+        headers:
+          Subject: "[heartbeat] pipeline observability alerting is alive"

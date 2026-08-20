@@ -1,0 +1,76 @@
+# postgres_exporter per metadata DB (plan §3.1). One per target rather than
+# a shared multi-target exporter - simpler and each is a few MB of RAM.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-exporter-control-tower
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: postgres-exporter-control-tower } }
+  template:
+    metadata:
+      labels: { app: postgres-exporter-control-tower, job: postgres-exporter-control-tower }
+    spec:
+      containers:
+        - name: postgres-exporter
+          image: quay.io/prometheuscommunity/postgres-exporter:v0.15.0
+          env:
+            - name: DATA_SOURCE_NAME
+              value: "postgresql://control_tower:ControlTowerObs2026!@control-tower-postgres.monitoring.svc.cluster.local:5432/control_tower?sslmode=disable"
+          ports: [{ containerPort: 9187, name: metrics }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-exporter-control-tower
+  namespace: monitoring
+  labels: { app: postgres-exporter-control-tower }
+spec:
+  selector: { app: postgres-exporter-control-tower }
+  ports: [{ port: 9187, targetPort: 9187, name: metrics }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-exporter-airflow
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: postgres-exporter-airflow } }
+  template:
+    metadata:
+      labels: { app: postgres-exporter-airflow, job: postgres-exporter-airflow }
+    spec:
+      containers:
+        - name: postgres-exporter
+          image: quay.io/prometheuscommunity/postgres-exporter:v0.15.0
+          env:
+            - name: DATA_SOURCE_NAME
+              value: "postgresql://control_tower_ro:ControlTowerRO2026!@airflow-postgresql.airflow.svc.cluster.local:5432/postgres?sslmode=disable"
+          ports: [{ containerPort: 9187, name: metrics }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-exporter-airflow
+  namespace: monitoring
+  labels: { app: postgres-exporter-airflow }
+spec:
+  selector: { app: postgres-exporter-airflow }
+  ports: [{ port: 9187, targetPort: 9187, name: metrics }]
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: postgres-exporters
+  namespace: monitoring
+  labels: { release: kube-prometheus-stack }
+spec:
+  jobLabel: job
+  selector:
+    matchExpressions:
+      - { key: app, operator: In, values: [postgres-exporter-control-tower, postgres-exporter-airflow] }
+  podMetricsEndpoints:
+    - port: metrics
+      interval: 30s

@@ -1,0 +1,20 @@
+# Spark Operator's own controller metrics: SparkApplication submission/success/failure
+# counts, webhook health. The operator Deployment/Service is long-lived (unlike the
+# driver/executor pods it launches), so ServiceMonitor is the right tool here.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: spark-operator
+  namespace: monitoring
+  labels:
+    release: kube-prom-agent
+spec:
+  namespaceSelector:
+    matchNames: ["spark-operator"]   # adjust to wherever spark-operator is installed
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: spark-operator
+  endpoints:
+    - port: metrics   # spark-operator Helm chart's metrics Service port name; default 10254
+      path: /metrics
+      interval: 30s

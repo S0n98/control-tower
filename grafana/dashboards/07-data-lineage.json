@@ -1,0 +1,122 @@
+{
+  "title": "Data Lineage",
+  "uid": "data-lineage",
+  "tags": [
+    "pipeline",
+    "control-tower",
+    "lineage"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "pipeline_id",
+        "type": "query",
+        "datasource": {
+          "type": "postgres",
+          "uid": "control-tower-postgres"
+        },
+        "query": "SELECT pipeline_id FROM pipeline ORDER BY pipeline_id",
+        "refresh": 2,
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "text",
+      "title": "About this view",
+      "description": "Explains what lineage_edge captures and where to go for finer-grained table/column-level lineage.",
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Coarse pipeline-to-pipeline lineage from `lineage_edge` (declared edges for NiFi/Kafka boundaries, automatic OpenLineage-derived edges elsewhere - `source_of_truth` column distinguishes them). For **fine-grained table/column-level lineage**, open [Marquez](http://192.168.2.100:30501/) directly - Grafana is the coarse correlation layer, not a lineage graph engine (plan \u00a76)."
+      }
+    },
+    {
+      "type": "nodeGraph",
+      "title": "Connected subgraph for $pipeline_id",
+      "description": "Recursive upstream+downstream traversal of lineage_edge (up to 10 hops) centered on the selected pipeline - built from two queries (nodes, edges) since Grafana's node graph panel needs them as separate result sets.",
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 3
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "refId": "nodes",
+          "format": "table",
+          "rawSql": "WITH RECURSIVE start_nodes AS (SELECT DISTINCT node FROM (SELECT src AS node FROM lineage_edge WHERE src LIKE '%:' || '$pipeline_id' UNION SELECT dst AS node FROM lineage_edge WHERE dst LIKE '%:' || '$pipeline_id') t), upstream AS (SELECT src, dst, 0 AS depth FROM lineage_edge WHERE dst IN (SELECT node FROM start_nodes) UNION ALL SELECT le.src, le.dst, u.depth + 1 FROM lineage_edge le JOIN upstream u ON le.dst = u.src WHERE u.depth < 10), downstream AS (SELECT src, dst, 0 AS depth FROM lineage_edge WHERE src IN (SELECT node FROM start_nodes) UNION ALL SELECT le.src, le.dst, d.depth + 1 FROM lineage_edge le JOIN downstream d ON le.src = d.dst WHERE d.depth < 10), subgraph AS (SELECT src, dst FROM upstream UNION SELECT src, dst FROM downstream UNION SELECT src, dst FROM lineage_edge WHERE src IN (SELECT node FROM start_nodes) OR dst IN (SELECT node FROM start_nodes)) SELECT DISTINCT node AS id, node AS title FROM (SELECT src AS node FROM subgraph UNION SELECT dst AS node FROM subgraph) t"
+        },
+        {
+          "refId": "edges",
+          "format": "table",
+          "rawSql": "WITH RECURSIVE start_nodes AS (SELECT DISTINCT node FROM (SELECT src AS node FROM lineage_edge WHERE src LIKE '%:' || '$pipeline_id' UNION SELECT dst AS node FROM lineage_edge WHERE dst LIKE '%:' || '$pipeline_id') t), upstream AS (SELECT src, dst, edge_type, 0 AS depth FROM lineage_edge WHERE dst IN (SELECT node FROM start_nodes) UNION ALL SELECT le.src, le.dst, le.edge_type, u.depth + 1 FROM lineage_edge le JOIN upstream u ON le.dst = u.src WHERE u.depth < 10), downstream AS (SELECT src, dst, edge_type, 0 AS depth FROM lineage_edge WHERE src IN (SELECT node FROM start_nodes) UNION ALL SELECT le.src, le.dst, le.edge_type, d.depth + 1 FROM lineage_edge le JOIN downstream d ON le.src = d.dst WHERE d.depth < 10), subgraph AS (SELECT DISTINCT src, dst, edge_type FROM (SELECT src, dst, edge_type FROM upstream UNION SELECT src, dst, edge_type FROM downstream) t) SELECT src || '->' || dst AS id, src AS source, dst AS target, edge_type AS mainstat FROM subgraph"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Upstream chain",
+      "description": "Everything that feeds into $pipeline_id, walked recursively through lineage_edge - depth 1 is a direct upstream, depth 2 is upstream-of-upstream, etc.",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 13
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "WITH RECURSIVE start_nodes AS (SELECT DISTINCT node FROM (SELECT src AS node FROM lineage_edge WHERE src LIKE '%:' || '$pipeline_id' UNION SELECT dst AS node FROM lineage_edge WHERE dst LIKE '%:' || '$pipeline_id') t), upstream AS (SELECT src, dst, edge_type, source_of_truth, 1 AS depth FROM lineage_edge WHERE dst IN (SELECT node FROM start_nodes) UNION ALL SELECT le.src, le.dst, le.edge_type, le.source_of_truth, u.depth + 1 FROM lineage_edge le JOIN upstream u ON le.dst = u.src WHERE u.depth < 10) SELECT depth, src AS upstream_of, edge_type, dst, source_of_truth FROM upstream ORDER BY depth"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Downstream chain",
+      "description": "Everything that consumes $pipeline_id's output, walked recursively through lineage_edge - depth 1 is a direct downstream consumer, depth 2 is downstream-of-downstream, etc.",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "WITH RECURSIVE start_nodes AS (SELECT DISTINCT node FROM (SELECT src AS node FROM lineage_edge WHERE src LIKE '%:' || '$pipeline_id' UNION SELECT dst AS node FROM lineage_edge WHERE dst LIKE '%:' || '$pipeline_id') t), downstream AS (SELECT src, dst, edge_type, source_of_truth, 1 AS depth FROM lineage_edge WHERE src IN (SELECT node FROM start_nodes) UNION ALL SELECT le.src, le.dst, le.edge_type, le.source_of_truth, d.depth + 1 FROM lineage_edge le JOIN downstream d ON le.src = d.dst WHERE d.depth < 10) SELECT depth, src, edge_type, dst AS downstream_of, source_of_truth FROM downstream ORDER BY depth"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+pipeline_id: dq_tier_a_checks
+domain: platform
+tier: P2
+owner: team-platform
+owner_email: team-platform@company.internal
+schedule: "*/15 * * * *"
+sla:
+  max_duration_minutes: 10
+components:
+  - type: airflow
+    id: dq_tier_a_checks
+    namespace: airflow
+outputs: []
+upstream: []

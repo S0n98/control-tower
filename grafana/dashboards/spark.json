@@ -1,0 +1,230 @@
+{
+  "title": "Spark",
+  "uid": "pipeline-spark",
+  "tags": [
+    "pipeline",
+    "spark"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "SparkApplications currently running",
+      "description": "Count of SparkApplication CRs the spark-operator controller currently reports as running (spark_application_running_count) - controller-level state, independent of any single job's driver/executor pods.",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(spark_application_running_count)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Successful completions (total)",
+      "description": "Cumulative count of SparkApplications the spark-operator controller has ever marked COMPLETED - a running total since the operator started, not a 24h window.",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(spark_application_success_count)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Failed completions (total)",
+      "description": "Cumulative count of SparkApplications the spark-operator controller has ever marked FAILED - a running total since the operator started, not a 24h window.",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(spark_application_failure_count)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Success / failure rate (spark-operator controller)",
+      "description": "Rate of new completions/failures per 10-minute window, derived from the controller's cumulative counters via increase() - turns the running totals above into an actual trend.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(spark_application_success_count[10m]))",
+          "legendFormat": "completed"
+        },
+        {
+          "expr": "sum(increase(spark_application_failure_count[10m]))",
+          "legendFormat": "failed"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Success execution time (avg, seconds)",
+      "description": "Average execution time of successfully-completed SparkApplications, from the controller's own duration histogram - controller-reported, not scraped from individual job pods.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "rate(spark_application_success_execution_time_seconds_sum[10m]) / rate(spark_application_success_execution_time_seconds_count[10m])",
+          "legendFormat": "avg duration"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Executor memory used / active tasks (live jobs)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Only populated while a SparkApplication's driver/executor pods are actually running - scraped directly from Spark's PrometheusServlet on the driver/executor pods, so data disappears once a job completes and its pods are cleaned up.",
+      "targets": [
+        {
+          "expr": "metrics_executor_memoryUsed_bytes",
+          "legendFormat": "{{application_name}}/{{executor_id}} mem used"
+        },
+        {
+          "expr": "metrics_executor_activeTasks",
+          "legendFormat": "{{application_name}}/{{executor_id}} active tasks"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Task completion (live jobs)",
+      "description": "Completed vs failed Spark tasks from the driver/executor pods' own PrometheusServlet - only populated while a job's pods are actually running, same caveat as the Executor memory panel above.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 14
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "metrics_executor_completedTasks_total",
+          "legendFormat": "{{application_name}}/{{executor_id}} completed"
+        },
+        {
+          "expr": "metrics_executor_failedTasks_total",
+          "legendFormat": "{{application_name}}/{{executor_id}} failed"
+        }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "Driver/executor logs (ERROR/WARN)",
+      "description": "Log message text (extracted from fluentbit's JSON envelope, not the raw JSON line) containing 'error' or 'warn', from pods named *-driver or *-exec-* in the default namespace - Spark Operator's own driver/executor pod naming convention, since these pods carry no queryable Loki label identifying them as Spark.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "expr": "{job=\"fluentbit\", kubernetes_namespace_name=\"default\"} | kubernetes_pod_name=~\".*-driver|.*-exec-.*\" | json | line_format \"{{.log}}\" |~ \"(?i)error|warn\""
+        }
+      ]
+    }
+  ]
+}

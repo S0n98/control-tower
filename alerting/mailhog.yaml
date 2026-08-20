@@ -1,0 +1,61 @@
+# Local SMTP catcher substituting for an org SMTP relay (plan §12 open item:
+# "SMTP relay reachable from the monitoring cluster" - none exists in this
+# sandbox). This makes the email alerting path REAL and inspectable (view
+# actually-delivered emails in a UI) rather than a config that's never been
+# proven to work. Swap Alertmanager's smarthost to the real relay in
+# production - everything downstream (routing/grouping/inhibition/digest)
+# is unaffected by that swap.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mailhog
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: mailhog } }
+  template:
+    metadata:
+      labels: { app: mailhog }
+    spec:
+      containers:
+        - name: mailhog
+          image: mailhog/mailhog:v1.0.1
+          ports:
+            - containerPort: 1025
+              name: smtp
+            - containerPort: 8025
+              name: http
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits: { memory: 128Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mailhog
+  namespace: monitoring
+  labels: { app: mailhog }
+spec:
+  selector: { app: mailhog }
+  ports:
+    - port: 1025
+      targetPort: 1025
+      name: smtp
+    - port: 8025
+      targetPort: 8025
+      name: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mailhog-ui
+  namespace: monitoring
+  labels: { app: mailhog }
+spec:
+  type: NodePort
+  selector: { app: mailhog }
+  ports:
+    - port: 8025
+      targetPort: 8025
+      nodePort: 30502
+      name: http

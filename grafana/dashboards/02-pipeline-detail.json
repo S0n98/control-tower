@@ -1,0 +1,497 @@
+{
+  "title": "Pipeline Detail",
+  "uid": "pipeline-detail-l3",
+  "tags": [
+    "pipeline",
+    "control-tower",
+    "l3"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "pipeline_id",
+        "type": "query",
+        "datasource": {
+          "type": "postgres",
+          "uid": "control-tower-postgres"
+        },
+        "query": "SELECT pipeline_id FROM pipeline ORDER BY pipeline_id",
+        "refresh": 1,
+        "current": {
+          "text": "dq_tier_a_checks",
+          "value": "dq_tier_a_checks"
+        }
+      },
+      {
+        "name": "namespace",
+        "type": "query",
+        "hide": 2,
+        "datasource": {
+          "type": "postgres",
+          "uid": "control-tower-postgres"
+        },
+        "query": "SELECT DISTINCT jsonb_array_elements(components_json)->>'namespace' AS namespace FROM pipeline WHERE pipeline_id = '$pipeline_id'",
+        "refresh": 2,
+        "current": {}
+      },
+      {
+        "name": "log_pod_regex",
+        "type": "query",
+        "hide": 2,
+        "description": "Narrows the Logs panel to just this pipeline's pod(s), derived from component_run.external_id (the real CR/pod name the collectors already track) - not just the shared k8s namespace, which can hold unrelated pods (e.g. sparkpi_sample's 'default' namespace also hosts minio-operator and superset). Falls back to '.*' (no pod narrowing) for pipelines with no discrete pod of their own - e.g. Airflow-orchestrated pipelines whose tasks run inside the shared airflow-scheduler/dag-processor pods - where log_content_regex does the narrowing instead.",
+        "datasource": {
+          "type": "postgres",
+          "uid": "control-tower-postgres"
+        },
+        "query": "SELECT CASE WHEN bool_or(type IN ('spark','flink')) THEN string_agg(DISTINCT split_part(external_id,'/',2), '|') FILTER (WHERE type IN ('spark','flink')) WHEN bool_or(type = 'nifi') THEN string_agg(DISTINCT external_id, '|') FILTER (WHERE type = 'nifi') ELSE '.*' END FROM component_run WHERE pipeline_id = '$pipeline_id'",
+        "refresh": 2,
+        "current": {}
+      },
+      {
+        "name": "log_content_regex",
+        "type": "query",
+        "hide": 2,
+        "description": "Line-content filter used only when log_pod_regex can't narrow to a discrete pod (Airflow-orchestrated pipelines) - matches this pipeline's dag_id, which appears literally in the shared scheduler/dag-processor pods' log lines.",
+        "datasource": {
+          "type": "postgres",
+          "uid": "control-tower-postgres"
+        },
+        "query": "SELECT CASE WHEN bool_and(type = 'airflow') THEN '$pipeline_id' ELSE '.*' END FROM component_run WHERE pipeline_id = '$pipeline_id'",
+        "refresh": 2,
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "$pipeline_id",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "type": "text",
+      "title": "Quick actions",
+      "description": "Cross-links to related dashboards and this pipeline's native UI/registry file for the currently-selected $pipeline_id.",
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 1
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Registry:** `registry/$pipeline_id.yaml` &nbsp;|&nbsp; [Pipeline Overview](/d/pipeline-overview) &nbsp;|&nbsp; [Pipeline SLA](/d/pipeline-sla) &nbsp;|&nbsp; [Data Lineage for $pipeline_id](/d/data-lineage?var-pipeline_id=$pipeline_id) &nbsp;|&nbsp; **Native UIs:** [Airflow](http://192.168.2.100:30081) \u00b7 [NiFi](https://192.168.2.100:30443/nifi) \u00b7 [Marquez](http://192.168.2.100:30501/) &nbsp;|&nbsp; Spark History Server / Trino / per-job Flink REST UIs are ClusterIP-only in this environment (no external NodePort) - use `ui_url` in the component table below for their in-cluster address, or `kubectl port-forward`."
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Current status",
+      "description": "Status of this pipeline's most recent run (pipeline_run), regardless of when it started.",
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT COALESCE(pr.status, 'unknown') AS status FROM pipeline p LEFT JOIN LATERAL (SELECT * FROM pipeline_run WHERE pipeline_id = p.pipeline_id ORDER BY started_at DESC NULLS LAST LIMIT 1) pr ON true WHERE p.pipeline_id = '$pipeline_id'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "success": {
+                  "text": "\ud83d\udfe2 SUCCESS",
+                  "color": "green"
+                },
+                "running": {
+                  "text": "\ud83d\udd35 RUNNING",
+                  "color": "blue"
+                },
+                "failed": {
+                  "text": "\ud83d\udd34 FAILED",
+                  "color": "red"
+                },
+                "unknown": {
+                  "text": "\u26aa UNKNOWN",
+                  "color": "text"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "none"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "SLA status",
+      "description": "This pipeline's current SLA state from pipeline_current_sla_status - the worst currently-active rule, not a historical count.",
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 5,
+        "y": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT COALESCE(sla.overall_result, 'ok') AS sla_status FROM pipeline p LEFT JOIN pipeline_current_sla_status sla ON sla.pipeline_id = p.pipeline_id WHERE p.pipeline_id = '$pipeline_id'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "ok": {
+                  "text": "\ud83d\udfe2 OK",
+                  "color": "green"
+                },
+                "at_risk": {
+                  "text": "\ud83d\udfe1 AT RISK",
+                  "color": "yellow"
+                },
+                "breached": {
+                  "text": "\ud83d\udd34 BREACHED",
+                  "color": "red"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "none"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Owner / Tier",
+      "description": "Registered owning team and priority tier (P1/P2/P3) from the pipeline registry (pipeline.owner, pipeline.tier).",
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 10,
+        "y": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT owner || ' / ' || tier AS owner_tier FROM pipeline WHERE pipeline_id = '$pipeline_id'"
+        }
+      ],
+      "options": {
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "SLA target",
+      "description": "The configured SLA threshold for this pipeline (max duration or freshness target) from pipeline.sla_json - what \"breached\" is measured against.",
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 15,
+        "y": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT COALESCE(sla_json->>'max_duration_minutes', sla_json->>'freshness_target_minutes', 'n/a') || CASE WHEN sla_json ? 'max_duration_minutes' THEN ' min max duration' WHEN sla_json ? 'freshness_target_minutes' THEN ' min freshness' ELSE '' END AS sla_target FROM pipeline WHERE pipeline_id = '$pipeline_id'"
+        }
+      ],
+      "options": {
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Last successful run",
+      "description": "Timestamp of this pipeline's most recent status='success' run - shows \"never succeeded\" instead of a bare no-data state for pipelines that have no discrete success event (e.g. continuous streaming pipelines that stay 'running' forever, or a deliberately-broken demo pipeline).",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT COALESCE(to_char(max(ended_at), 'YYYY-MM-DD HH24:MI'), 'never succeeded') AS last_success FROM pipeline_run WHERE pipeline_id = '$pipeline_id' AND status = 'success'"
+        }
+      ],
+      "options": {
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Duration trend vs SLA threshold (30d)",
+      "description": "Each run's duration_s over the last 30 days plotted against the pipeline's configured max_duration_minutes SLA threshold, so a slow drift toward breach is visible before it actually breaches.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT started_at AS time, duration_s FROM pipeline_run WHERE pipeline_id = '$pipeline_id' AND started_at > now() - interval '30 days' ORDER BY started_at"
+        },
+        {
+          "refId": "B",
+          "format": "time_series",
+          "rawSql": "SELECT started_at AS time, (SELECT (sla_json->>'max_duration_minutes')::float * 60 FROM pipeline WHERE pipeline_id = '$pipeline_id') AS sla_threshold_s FROM pipeline_run WHERE pipeline_id = '$pipeline_id' AND started_at > now() - interval '30 days' ORDER BY started_at"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Run history (30d)",
+      "description": "Raw pipeline_run rows for this pipeline over the last 30 days, most recent first - the audit trail behind the summary stat tiles above.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT started_at, ended_at, status, round(duration_s) AS duration_s, trigger, error_summary FROM pipeline_run WHERE pipeline_id = '$pipeline_id' AND started_at > now() - interval '30 days' ORDER BY started_at DESC LIMIT 100"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Component breakdown (stage status)",
+      "description": "This is the swimlane: each row is one stage (NiFi/Spark/Flink/Airflow task) with current status, color-coded. Direct link to each component's native UI where available (ui_url) - Grafana is the correlation layer, not a replacement for the Spark/Flink/Airflow UIs (plan \u00a77).",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT type, external_id, status, started_at, ended_at, retry_count, ui_url FROM component_run WHERE pipeline_id = '$pipeline_id' ORDER BY last_seen_at DESC LIMIT 50"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "success": {
+                        "text": "SUCCESS",
+                        "color": "green"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "running": {
+                        "text": "RUNNING",
+                        "color": "blue"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "failed": {
+                        "text": "FAILED",
+                        "color": "red"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "unknown": {
+                        "text": "UNKNOWN",
+                        "color": "semi-dark-orange"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "table",
+      "title": "DQ checklist for this pipeline's datasets",
+      "description": "Latest dq_result rows for datasets this pipeline produces - pass/warn/fail per check, independent of whether the pipeline_run itself succeeded (a pipeline can report success while its output data fails quality checks).",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT dataset, check_name, dimension, status, observed, threshold, evaluated_at FROM dq_result WHERE pipeline_id = '$pipeline_id' ORDER BY evaluated_at DESC LIMIT 50"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "pass": {
+                        "text": "\ud83d\udfe2 PASS",
+                        "color": "green"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "warn": {
+                        "text": "\ud83d\udfe1 WARN",
+                        "color": "yellow"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "fail": {
+                        "text": "\ud83d\udd34 FAIL",
+                        "color": "red"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "logs",
+      "title": "Logs for this pipeline's job",
+      "description": "Filtered down to this pipeline's actual pod(s) (log_pod_regex, from component_run.external_id), not just its shared k8s namespace - a namespace can hold unrelated workloads (e.g. sparkpi_sample's 'default' namespace also runs minio-operator and superset). For Airflow-orchestrated pipelines with no discrete pod of their own, falls back to matching the dag_id in the shared scheduler/dag-processor logs (log_content_regex). Shows the extracted log message text, not fluentbit's raw JSON envelope. Not correlated by run_id: these demo jobs print plain-text logs, not structured logs carrying a run_id field - true one-click run_id correlation is a follow-up once real pipelines emit structured logs.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "expr": "{job=\"fluentbit\", kubernetes_namespace_name=\"$namespace\"} | kubernetes_pod_name=~\"$log_pod_regex.*\" | json | line_format \"{{.log}}\" |~ \"(?i)$log_content_regex\""
+        }
+      ]
+    }
+  ]
+}

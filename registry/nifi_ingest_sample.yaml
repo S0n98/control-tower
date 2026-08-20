@@ -1,0 +1,14 @@
+pipeline_id: nifi_ingest_sample
+domain: platform
+tier: P3
+owner: team-platform
+owner_email: team-platform@company.internal
+schedule: "continuous"
+sla:
+  freshness_target_minutes: 5
+components:
+  - type: nifi
+    id: nifi-0
+    namespace: nifi
+outputs: []
+upstream: []

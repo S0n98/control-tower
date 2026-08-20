@@ -1,0 +1,68 @@
+# Helm values for kube-prometheus-stack, deployed in the WORKLOAD cluster
+# (the cluster running Spark Operator, Flink Operator, Airflow).
+#
+# This installs a Prometheus in *Agent mode* whose only job is local
+# service discovery + scraping, then remote_write-ing series to the
+# existing central Prometheus in the monitoring cluster. It does NOT
+# deploy Grafana or Alertmanager here — those already exist centrally.
+#
+# helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+# helm upgrade --install kube-prom-agent prometheus-community/kube-prometheus-stack \
+#   -n monitoring --create-namespace -f prometheus-agent-values.yaml
+
+# Grafana/Alertmanager live in the monitoring cluster already — don't duplicate them here.
+grafana:
+  enabled: false
+alertmanager:
+  enabled: false
+
+prometheus:
+  prometheusSpec:
+    # Agent mode: no local querying, WAL-only, forwards everything via remote_write.
+    # Requires Prometheus Operator >= 0.75 / prometheus >= v2.32 agent mode support.
+    mode: Agent
+
+    # Only pick up ServiceMonitors/PodMonitors carrying this label, so this Prometheus
+    # doesn't silently vacuum up every ServiceMonitor cluster-wide as the cluster grows.
+    serviceMonitorSelector:
+      matchLabels:
+        release: kube-prom-agent
+    podMonitorSelector:
+      matchLabels:
+        release: kube-prom-agent
+
+    # --- Fill in before deploying ---
+    # Endpoint must be reachable from this cluster's pod network (LB/ingress in the
+    # monitoring cluster). Confirm reachability + auth first (see plan "Open items").
+    remoteWrite:
+      - url: "https://prometheus.monitoring.example.internal/api/v1/write"
+        basicAuth:
+          username:
+            name: prometheus-remote-write-credentials
+            key: username
+          password:
+            name: prometheus-remote-write-credentials
+            key: password
+        # Keep cardinality in check for ephemeral Spark/Flink pods: only ship the
+        # metric families dashboards/alerts actually use. Extend this list as new
+        # panels/rules are added — don't drop it to "ship everything".
+        writeRelabelConfigs:
+          - sourceLabels: [__name__]
+            regex: '(spark_.*|flink_.*|airflow_.*|up|scrape_.*)'
+            action: keep
+
+    # Agent mode still needs *some* local disk for the WAL.
+    storage:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 10Gi
+
+    resources:
+      requests:
+        cpu: 200m
+        memory: 400Mi
+      limits:
+        memory: 800Mi

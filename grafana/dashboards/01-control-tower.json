@@ -1,0 +1,953 @@
+{
+  "title": "Data Platform Control Tower",
+  "uid": "control-tower-l1",
+  "tags": [
+    "pipeline",
+    "control-tower",
+    "l1"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 3,
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "PLATFORM",
+      "description": "Combined health across blackbox-probed service UIs (NiFi/Airflow/Trino/MinIO/Nessie/Ranger/Control Tower) AND every node_exporter instance (all cluster nodes) - both conditions must be up for 100%. 100% = HEALTHY, 90-99% = WARNING, below 90% = UNHEALTHY.",
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "(sum(probe_success) + sum(up{job=\"node-exporter\"})) / (count(probe_success) + count(up{job=\"node-exporter\"})) * 100"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 90
+              },
+              {
+                "color": "green",
+                "value": 100
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "100": {
+                  "text": "HEALTHY"
+                }
+              }
+            },
+            {
+              "type": "range",
+              "options": {
+                "from": 90,
+                "to": 99.999,
+                "result": {
+                  "text": "WARNING"
+                }
+              }
+            },
+            {
+              "type": "range",
+              "options": {
+                "from": 0,
+                "to": 89.999,
+                "result": {
+                  "text": "UNHEALTHY"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "links": [
+        {
+          "title": "Data Platform Services",
+          "url": "/d/data-platform-services",
+          "targetBlank": false
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "PIPELINES",
+      "description": "Success rate over the last 24h (successful / (successful+failed) pipeline_run rows).",
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 5,
+        "y": 0
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT CASE WHEN count(*) FILTER (WHERE status IN ('success','failed')) = 0 THEN 100.0 ELSE round(100.0 * count(*) FILTER (WHERE status = 'success') / count(*) FILTER (WHERE status IN ('success','failed')), 1) END AS success_rate FROM pipeline_run WHERE started_at > now() - interval '24 hours'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 90
+              },
+              {
+                "color": "green",
+                "value": 98
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "links": [
+        {
+          "title": "Pipeline Overview",
+          "url": "/d/pipeline-overview",
+          "targetBlank": false
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "DATA",
+      "description": "DQ Tier-A check pass rate over the last 24h.",
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 10,
+        "y": 0
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT CASE WHEN count(*) = 0 THEN 100.0 ELSE round(100.0 * count(*) FILTER (WHERE status = 'pass') / count(*), 1) END AS dq_pass_rate FROM dq_result WHERE evaluated_at > now() - interval '24 hours'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 90
+              },
+              {
+                "color": "green",
+                "value": 98
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "links": [
+        {
+          "title": "Data Quality Overview",
+          "url": "/d/dq-overview",
+          "targetBlank": false
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "K8S",
+      "description": "Fraction of cluster nodes in Ready condition.",
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 15,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "avg(kube_node_status_condition{condition=\"Ready\", status=\"true\"}) * 100"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 80
+              },
+              {
+                "color": "green",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "links": [
+        {
+          "title": "Kubernetes cluster detail",
+          "url": "/d/efa86fd1d0c121a26444b636a3f509a8",
+          "targetBlank": false
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "ACTIVE ALERTS",
+      "description": "Firing alerts, excluding the always-on Watchdog/InfoInhibitor meta-alerts.",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "count(ALERTS{alertstate=\"firing\"} unless {alertname=~\"Watchdog|InfoInhibitor\"}) OR vector(0)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "links": [
+        {
+          "title": "Alertmanager Overview",
+          "url": "/d/alertmanager-overview",
+          "targetBlank": false
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Pipeline Operations \u2014 Last 24 Hours",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Runs (24h)",
+      "description": "Count of pipeline_run rows (run events) started in the last 24h - a pipeline that ran 3 times today counts 3. Distinct from the pipeline count on Pipeline Overview's \"Pipelines (registered)\" tile.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 6
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT count(*) AS total FROM pipeline_run WHERE started_at > now() - interval '24 hours'"
+        }
+      ],
+      "options": {
+        "graphMode": "none"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Success",
+      "description": "Count of pipeline_run rows with status='success' in the last 24h - the numerator behind the PIPELINES tile's success-rate percentage.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 6
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT count(*) AS success FROM pipeline_run WHERE started_at > now() - interval '24 hours' AND status = 'success'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "green",
+            "mode": "fixed"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "none",
+        "colorMode": "value"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Running",
+      "description": "Current state, not a 24h-windowed count - continuous pipelines (NiFi/streaming Flink) keep one stable run_id upserted forever, so their started_at can be days old even while genuinely still running. Matches Pipeline Overview's count.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 6
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT count(*) AS running FROM pipeline p LEFT JOIN LATERAL (SELECT status FROM pipeline_run WHERE pipeline_id = p.pipeline_id ORDER BY started_at DESC NULLS LAST LIMIT 1) pr ON true WHERE p.enabled AND pr.status = 'running'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "blue",
+            "mode": "fixed"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "none",
+        "colorMode": "value"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Failed",
+      "description": "Current state (latest run per pipeline), not a 24h-windowed count - see the Running tile's note. A pipeline that failed and was never rerun stays counted here indefinitely, same as Pipelines Requiring Attention.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 6
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT count(*) AS failed FROM pipeline p LEFT JOIN LATERAL (SELECT status FROM pipeline_run WHERE pipeline_id = p.pipeline_id ORDER BY started_at DESC NULLS LAST LIMIT 1) pr ON true WHERE p.enabled AND pr.status = 'failed'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "none",
+        "colorMode": "value"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "SLA Misses (24h)",
+      "description": "Distinct pipelines with at least one breach recorded in the last 24h - historical, includes ones that have since recovered. For who is currently breaching right now, see Pipeline Overview's \"SLA Breached (now)\" tile.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 6
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT count(DISTINCT pipeline_id) AS sla_miss FROM sla_evaluation WHERE result = 'breached' AND evaluated_at > now() - interval '24 hours'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "none",
+        "colorMode": "value"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Unregistered (drift)",
+      "description": "Components observed by the collectors (Spark/Flink/NiFi/Airflow) that don't map to any pipeline_id in the registry - signals a real workload running with no SLA/ownership coverage. Backed by the pipeline_unregistered gauge each collector exports.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(pipeline_unregistered) OR vector(0)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "none",
+        "colorMode": "value"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Pipeline Success Rate (hourly)",
+      "description": "Hourly success rate (success / (success+failed)) over the last 24h, from pipeline_run - the trend behind the PIPELINES tile's single 24h number above.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 10
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('hour', started_at) AS time, round(100.0 * count(*) FILTER (WHERE status = 'success') / GREATEST(count(*) FILTER (WHERE status IN ('success','failed')), 1), 1) AS success_rate FROM pipeline_run WHERE started_at > now() - interval '24 hours' GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Pipeline Execution Duration (avg / max, hourly)",
+      "description": "Hourly average and max pipeline_run.duration_s over the last 24h - watch the max line for one slow run hiding inside an otherwise-healthy average.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 10
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('hour', started_at) AS time, avg(duration_s) AS avg_duration, max(duration_s) AS max_duration FROM pipeline_run WHERE started_at > now() - interval '24 hours' AND duration_s IS NOT NULL GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Pipelines Requiring Attention",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      }
+    },
+    {
+      "type": "table",
+      "title": "Pipelines Requiring Attention",
+      "description": "Only abnormal pipelines appear here (failed / SLA breach / stuck / stale-freshness / DQ failure) - the full fleet is in Pipeline Overview.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 19
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "WITH attention AS (SELECT p.pipeline_id, (SELECT string_agg(DISTINCT initcap(c->>'type'), ', ') FROM jsonb_array_elements(p.components_json) c) AS engine, pr.status AS run_status, pr.started_at, pr.ended_at, sla.overall_result, sla.worst_sla_type, CASE WHEN p.sla_json ? 'max_duration_minutes' THEN (p.sla_json->>'max_duration_minutes') || 'm max' WHEN p.sla_json ? 'freshness_target_minutes' THEN 'realtime' ELSE 'n/a' END AS sla_target, EXISTS (SELECT 1 FROM dq_result dq WHERE dq.pipeline_id = p.pipeline_id AND dq.status = 'fail' AND dq.evaluated_at > now() - interval '1 hour') AS dq_failing FROM pipeline p LEFT JOIN LATERAL (SELECT * FROM pipeline_run WHERE pipeline_id = p.pipeline_id ORDER BY started_at DESC NULLS LAST LIMIT 1) pr ON true LEFT JOIN pipeline_current_sla_status sla ON sla.pipeline_id = p.pipeline_id WHERE p.enabled), filtered AS (SELECT *, EXTRACT(EPOCH FROM (CASE WHEN run_status = 'running' THEN now() - started_at ELSE ended_at - started_at END))::numeric AS elapsed_seconds FROM attention WHERE run_status = 'failed' OR overall_result = 'breached' OR dq_failing) SELECT pipeline_id AS \"Pipeline\", COALESCE(engine, 'n/a') AS \"Engine\", CASE WHEN run_status = 'failed' THEN 'FAILED' WHEN overall_result = 'breached' AND worst_sla_type = 'freshness_breach' THEN 'STALE' WHEN overall_result = 'breached' AND worst_sla_type = 'running_too_long' THEN 'STUCK' WHEN overall_result = 'breached' THEN 'SLA BREACH' WHEN dq_failing THEN 'DQ FAIL' ELSE 'UNKNOWN' END AS \"Status\", CASE WHEN elapsed_seconds IS NULL THEN 'n/a' WHEN elapsed_seconds >= 86400 THEN floor(elapsed_seconds / 86400)::int || 'd ' || floor(mod(elapsed_seconds, 86400) / 3600)::int || 'h' WHEN elapsed_seconds >= 3600 THEN floor(elapsed_seconds / 3600)::int || 'h ' || floor(mod(elapsed_seconds, 3600) / 60)::int || 'm' ELSE GREATEST(floor(elapsed_seconds / 60)::int, 0) || 'm' END AS \"Duration\", sla_target AS \"SLA\" FROM filtered ORDER BY (CASE WHEN run_status = 'failed' THEN 0 WHEN overall_result = 'breached' THEN 1 ELSE 2 END), pipeline_id"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Status"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "FAILED": {
+                        "text": "\ud83d\udd34 FAILED",
+                        "color": "red"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "SLA BREACH": {
+                        "text": "\ud83d\udd34 SLA BREACH",
+                        "color": "red"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "STALE": {
+                        "text": "\ud83d\udfe1 STALE",
+                        "color": "yellow"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "STUCK": {
+                        "text": "\ud83d\udfe1 STUCK",
+                        "color": "yellow"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "DQ FAIL": {
+                        "text": "\ud83d\udfe1 DQ FAIL",
+                        "color": "yellow"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "UNKNOWN": {
+                        "text": "\u26aa UNKNOWN",
+                        "color": "semi-dark-orange"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Pipeline"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open Pipeline Detail",
+                    "url": "/d/pipeline-detail-l3?var-pipeline_id=${__value.text}"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "row",
+      "title": "Active Incidents",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 27
+      }
+    },
+    {
+      "type": "table",
+      "title": "Firing alerts",
+      "description": "All currently-firing Alertmanager alerts (excluding the always-on Watchdog/InfoInhibitor heartbeats), with target-identifying columns (job/namespace/pod/instance) so a bare alert like TargetDown can actually be traced to what's down.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 28
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "ALERTS{alertstate=\"firing\"} unless {alertname=~\"Watchdog|InfoInhibitor\"}",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true,
+              "__name__": true,
+              "alertstate": true,
+              "container": true,
+              "endpoint": true,
+              "prometheus": true,
+              "service": true
+            },
+            "indexByName": {
+              "alertname": 0,
+              "severity": 1,
+              "tier": 2,
+              "job": 3,
+              "namespace": 4,
+              "pod": 5,
+              "instance": 6,
+              "pipeline_id": 7,
+              "owner": 8,
+              "runbook_url": 9
+            },
+            "renameByName": {
+              "alertname": "Alert",
+              "severity": "Severity",
+              "tier": "Priority",
+              "job": "Target (job)",
+              "namespace": "Namespace",
+              "pod": "Pod",
+              "instance": "Instance",
+              "pipeline_id": "Pipeline",
+              "owner": "Owner",
+              "runbook_url": "Runbook"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Severity"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "critical": {
+                        "text": "\ud83d\udd34 CRITICAL",
+                        "color": "red"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "page": {
+                        "text": "\ud83d\udd34 PAGE",
+                        "color": "red"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "warning": {
+                        "text": "\ud83d\udfe0 WARNING",
+                        "color": "orange"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "info": {
+                        "text": "\ud83d\udd35 INFO",
+                        "color": "blue"
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "empty",
+                      "result": {
+                        "text": "\u2014",
+                        "color": "text"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Priority"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "P1": {
+                        "text": "\ud83d\udd34 P1",
+                        "color": "red"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "P2": {
+                        "text": "\ud83d\udfe0 P2",
+                        "color": "orange"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "P3": {
+                        "text": "\ud83d\udfe1 P3",
+                        "color": "yellow"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "dead-mans-switch": {
+                        "text": "\ud83d\udd35 HEARTBEAT",
+                        "color": "blue"
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "empty",
+                      "result": {
+                        "text": "\u2014",
+                        "color": "text"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

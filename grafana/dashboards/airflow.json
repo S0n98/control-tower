@@ -1,0 +1,141 @@
+{
+  "title": "Airflow",
+  "uid": "pipeline-airflow",
+  "tags": [
+    "pipeline",
+    "airflow"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 2,
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "DAG task outcomes (all DAGs, cumulative)",
+      "description": "Airflow's StatsD emitter bakes dag_id/task_id into the metric name itself (airflow_ti_finish_<dag>_<task>_<state>) rather than exposing them as labels, so this aggregates via a __name__ regex match - a plain sum()/count() over that pattern works fine, but increase()/rate() over it errors ('vector cannot contain metrics with the same labelset', since those functions strip __name__ and the remaining labels collide) - see Pipeline Overview's per-DAG panel for the safe per-DAG-name workaround if a trend is needed.",
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum({__name__=~\"airflow_ti_finish_.*_success\"}) OR vector(0)",
+          "legendFormat": "task successes (cumulative)"
+        },
+        {
+          "expr": "sum({__name__=~\"airflow_ti_finish_.*_failed\"}) OR vector(0)",
+          "legendFormat": "task failures (cumulative)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Flink-triggering DAG: task outcomes",
+      "description": "trigger_flink_job's 3 tasks (extract/submit_flink_job/notify), named explicitly since the generic __name__ regex above can't safely feed increase()/rate(). Links out to the Flink dashboard for drill-down on the seam between Airflow and Flink.",
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(airflow_ti_finish_trigger_flink_job_extract_success[1h]) or vector(0)) + sum(increase(airflow_ti_finish_trigger_flink_job_submit_flink_job_success[1h]) or vector(0)) + sum(increase(airflow_ti_finish_trigger_flink_job_notify_success[1h]) or vector(0))",
+          "legendFormat": "task successes (1h)"
+        }
+      ],
+      "links": [
+        {
+          "title": "Flink dashboard",
+          "url": "/d/pipeline-flink/flink",
+          "targetBlank": false
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Task duration (avg, by DAG)",
+      "description": "airflow_task_duration is a StatsD timer -> Prometheus Summary (sum+count, no histogram buckets), so this is an average, not a percentile. Uses a 1h rate window rather than the usual 10m - these sample DAGs are triggered manually (see the KubernetesExecutor up_for_reschedule limitation in CLAUDE.md), not continuously, so a narrow window reads 0/0=NaN (blank) between manual runs.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "rate(airflow_task_duration_sum[1h]) / rate(airflow_task_duration_count[1h])",
+          "legendFormat": "{{dag_id}} avg duration"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Scheduler heartbeat rate / executor slot utilization",
+      "description": "Airflow's StatsD path exposes airflow_scheduler_heartbeat as a running counter, not a timestamp gauge - a healthy scheduler reads ~60/min via rate(), a stalled one drops to 0 (see the Control Tower L1 dashboard's identical pattern).",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(airflow_scheduler_heartbeat[5m])) * 60",
+          "legendFormat": "scheduler heartbeats/min"
+        },
+        {
+          "expr": "airflow_executor_running_tasks / airflow_executor_open_slots",
+          "legendFormat": "slot utilization"
+        }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "Scheduler/worker logs (ERROR/WARN)",
+      "description": "Log message text (extracted from fluentbit's JSON envelope, not the raw JSON line) containing 'error' or 'warn' (case-insensitive), from every pod in the airflow namespace - not filtered to a specific DAG, see Pipeline Detail's per-pipeline Logs panel for that.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "expr": "{job=\"fluentbit\", kubernetes_namespace_name=\"airflow\"} | json | line_format \"{{.log}}\" |~ \"(?i)error|warn\""
+        }
+      ]
+    }
+  ]
+}

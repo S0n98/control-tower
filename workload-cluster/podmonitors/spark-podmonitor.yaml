@@ -1,0 +1,38 @@
+# Scrapes Spark 3.5.1 driver/executor pods directly.
+#
+# These pods are EPHEMERAL and created per SparkApplication run — a ServiceMonitor
+# won't track them (no stable Service backs an individual driver/executor). PodMonitor
+# uses Kubernetes pod-level service discovery instead, so new pods are picked up as
+# they appear.
+#
+# Requires Spark launched with:
+#   spark.ui.prometheus.enabled=true
+#   spark.metrics.conf.*.sink.prometheusServlet.class=org.apache.spark.metrics.sink.PrometheusServlet
+# (set these in the SparkApplication spec's sparkConf, or a cluster-wide default via
+# the spark-operator's mutating webhook config)
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: spark-driver-executor
+  namespace: monitoring
+  labels:
+    release: kube-prom-agent   # must match prometheus.prometheusSpec.podMonitorSelector
+spec:
+  namespaceSelector:
+    any: true   # SparkApplications can land in multiple namespaces; narrow this if not
+  selector:
+    matchExpressions:
+      # spark-operator sets spark-role=driver|executor on every pod it launches
+      - key: spark-role
+        operator: In
+        values: ["driver", "executor"]
+  podMetricsEndpoints:
+    - port: metrics
+      # Spark's PrometheusServlet defaults to this path; the driver/executor container
+      # port must be named "metrics" (add a named containerPort in the pod template,
+      # or switch this to `targetPort: 4040` if the chart doesn't expose a named port).
+      path: /metrics/executors/prometheus
+      interval: 30s
+    - port: metrics
+      path: /metrics/prometheus
+      interval: 30s

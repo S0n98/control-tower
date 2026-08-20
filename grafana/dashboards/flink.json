@@ -1,0 +1,160 @@
+{
+  "title": "Flink",
+  "uid": "pipeline-flink",
+  "tags": [
+    "pipeline",
+    "flink"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "type": "table",
+      "title": "FlinkDeployment / FlinkSessionJob status (current)",
+      "description": "Current reconciled state of every FlinkDeployment/FlinkSessionJob known to the Flink Kubernetes Operator (flink_kubernetes_operator_flinkdeployment_status) - the operator's own view of RUNNING/SUSPENDED/ERROR, independent of the Control Tower's pipeline_run status.",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "flink_kubernetes_operator_flinkdeployment_status",
+          "format": "table",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Checkpoint duration",
+      "description": "Time taken for each Flink job's most recent checkpoint to complete - a sustained upward trend often precedes checkpoint timeouts/failures.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "flink_jobmanager_job_lastCheckpointDuration",
+          "legendFormat": "{{job_name}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Checkpoint failures / restart count",
+      "description": "Cumulative failed-checkpoint count and restarts in the last 15m per job - either climbing indicates the job is unhealthy even if its overall status still reads RUNNING.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "flink_jobmanager_job_numberOfFailedCheckpoints",
+          "legendFormat": "{{job_name}} failed checkpoints"
+        },
+        {
+          "expr": "increase(flink_jobmanager_job_numRestarts[15m])",
+          "legendFormat": "{{job_name}} restarts (15m)"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "TaskManager CPU / memory",
+      "description": "Per-TaskManager JVM CPU load and heap usage - watch for heap climbing toward max, a leading indicator of an OOM-triggered restart.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 15
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "avg by (tm_id) (flink_taskmanager_Status_JVM_CPU_Load)",
+          "legendFormat": "{{tm_id}} cpu"
+        },
+        {
+          "expr": "avg by (tm_id) (flink_taskmanager_Status_JVM_Memory_Heap_Used)",
+          "legendFormat": "{{tm_id}} heap"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Backpressure / watermark lag",
+      "description": "Per-task backpressure flag and current output watermark - sustained backpressure means the job can't keep up with its input rate; a stalled watermark means event-time processing has stopped advancing.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 15
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "flink_taskmanager_job_task_isBackPressured",
+          "legendFormat": "{{task_name}} backpressured"
+        },
+        {
+          "expr": "flink_taskmanager_job_task_currentOutputWatermark",
+          "legendFormat": "{{task_name}} watermark"
+        }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "JM/TM logs (ERROR/WARN)",
+      "description": "Log message text (extracted from fluentbit's JSON envelope, not the raw JSON line) containing 'error' or 'warn', from any pod labeled kubernetes.io component=jobmanager or taskmanager, across all Flink jobs in this environment.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 23
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "expr": "{job=\"fluentbit\", kubernetes_labels_component=~\"jobmanager|taskmanager\"} | json | line_format \"{{.log}}\" |~ \"(?i)error|warn\""
+        }
+      ]
+    }
+  ]
+}

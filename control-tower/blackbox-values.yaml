@@ -1,0 +1,104 @@
+# blackbox_exporter (plan §3.1): HTTP 200 + TLS-expiry probes that drive
+# the L1 dashboard's green/amber/red "HEALTHY" tiles for service UIs that
+# don't otherwise expose a Prometheus /metrics endpoint of their own.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blackbox-exporter
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: blackbox-exporter }
+  template:
+    metadata:
+      labels: { app: blackbox-exporter }
+    spec:
+      containers:
+        - name: blackbox-exporter
+          image: prom/blackbox-exporter:v0.25.0
+          args: ["--config.file=/config/blackbox.yml"]
+          ports:
+            - containerPort: 9115
+              name: http
+          volumeMounts:
+            - name: config
+              mountPath: /config
+      volumes:
+        - name: config
+          configMap:
+            name: blackbox-exporter-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: blackbox-exporter-config
+  namespace: monitoring
+data:
+  blackbox.yml: |
+    modules:
+      http_2xx_insecure:
+        prober: http
+        timeout: 5s
+        http:
+          valid_status_codes: [200, 201, 202, 301, 302, 401, 403]
+          tls_config:
+            insecure_skip_verify: true
+      tcp_connect:
+        prober: tcp
+        timeout: 5s
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: blackbox-exporter
+  namespace: monitoring
+  labels: { app: blackbox-exporter }
+spec:
+  selector: { app: blackbox-exporter }
+  ports:
+    - port: 9115
+      targetPort: 9115
+      name: http
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: blackbox-exporter-self
+  namespace: monitoring
+  labels: { release: kube-prometheus-stack }
+spec:
+  selector:
+    matchLabels: { app: blackbox-exporter }
+  podMetricsEndpoints:
+    - port: http
+---
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: pipeline-service-uis
+  namespace: monitoring
+  labels: { release: kube-prometheus-stack }
+spec:
+  jobName: blackbox-service-uis
+  interval: 30s
+  module: http_2xx_insecure
+  prober:
+    url: blackbox-exporter.monitoring.svc.cluster.local:9115
+  targets:
+    staticConfig:
+      static:
+        # spark-operator and flink-kubernetes-operator have no independent
+        # Service to blackbox-probe (only a webhook Service and per-job REST
+        # services) - their health is already covered by the existing
+        # up{job="monitoring/spark-operator"} / up{job="monitoring/flink-jobs"}
+        # PodMonitor targets, so they're intentionally not duplicated here.
+        - https://nifi.nifi.svc.cluster.local:8443/nifi-api/access
+        - http://airflow-api-server.airflow.svc.cluster.local:8080/api/v2/monitor/health
+        - http://trino.default.svc.cluster.local:8080/v1/info
+        - http://nessie-mgmt.default.svc.cluster.local:9000/q/health
+        - http://minio.default.svc.cluster.local:80/minio/health/live
+        - http://ranger-apache-ranger.ranger.svc.cluster.local:6080/login.jsp
+        - http://control-tower.monitoring.svc.cluster.local:8000/healthz
+      labels:
+        check: service_ui

@@ -1,0 +1,54 @@
+# Live values (helm get values kube-prometheus-stack -n monitoring), chart
+# kube-prometheus-stack-88.3.0. Alertmanager's own routing/receiver config is
+# NOT here - kube-prometheus-stack ships a default-deny "null" receiver, and
+# the real config is applied directly as a Secret by alerting/alertmanager-config.yaml
+# (see CLAUDE.md - Helm upgrades on this chart are avoided after initial install).
+alertmanager:
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          resources:
+            requests:
+              storage: 2Gi
+          storageClassName: nfs-client
+  enabled: true
+grafana:
+  adminPassword: PipelineObs2026!
+  enabled: true
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClassName: nfs-client
+  service:
+    nodePort: 30300
+    type: NodePort
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      searchNamespace: ALL
+    datasources:
+      enabled: true
+prometheus:
+  prometheusSpec:
+    podMonitorSelectorNilUsesHelmValues: false
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+    retention: 15d
+    ruleSelectorNilUsesHelmValues: false
+    serviceMonitorSelectorNilUsesHelmValues: false
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          resources:
+            requests:
+              storage: 20Gi
+          storageClassName: nfs-client
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi

@@ -1,0 +1,14 @@
+[Unit]
+Description=NiFi bulletin-board Prometheus exporter
+After=network.target
+
+[Service]
+Type=simple
+User=nifi
+EnvironmentFile=-/etc/nifi-bulletin-exporter/env
+ExecStart=/usr/bin/python3 /opt/nifi-bulletin-exporter/nifi_bulletin_exporter.py
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

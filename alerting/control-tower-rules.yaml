@@ -1,0 +1,69 @@
+# Alert rules over the Control Tower's bounded-cardinality gauges (plan §8):
+# alert on symptoms ("pipeline missed SLA"), not causes ("pod restarted").
+# Every alert carries a runbook_url - "no runbook, no alert" (plan §8).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: control-tower-rules
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: control-tower.rules
+      rules:
+        - alert: PipelineSLABreached
+          expr: pipeline_sla_status == 2
+          for: 2m
+          labels:
+            runbook_url: "https://runbooks.internal/pipeline-sla-breach"
+          annotations:
+            summary: "Pipeline {{ $labels.pipeline_id }} ({{ $labels.tier }}, owner {{ $labels.owner }}) has a breached SLA"
+            description: "Check the L3 Pipeline Detail dashboard for {{ $labels.pipeline_id }} for the specific breach type (not_started/running_too_long/finished_late/freshness_breach/dq_failed/upstream_blocked)."
+
+        - alert: PipelineFailed
+          expr: pipeline_current_state == 2
+          for: 2m
+          labels:
+            runbook_url: "https://runbooks.internal/pipeline-failed"
+          annotations:
+            summary: "Pipeline {{ $labels.pipeline_id }} ({{ $labels.tier }}, owner {{ $labels.owner }}) is in a failed state"
+
+        - alert: PipelineUnregistered
+          expr: pipeline_unregistered == 1
+          for: 5m
+          labels:
+            tier: "P3"
+            owner: "team-platform"
+            runbook_url: "https://runbooks.internal/registry-drift"
+          annotations:
+            summary: "{{ $labels.component_type }}/{{ $labels.external_id }} in namespace {{ $labels.namespace }} is running but not in the pipeline registry"
+            description: "Registry drift (plan §2 enforcement) - add it to registry/*.yaml or investigate why it exists."
+
+        - alert: DomainDQScoreLow
+          expr: dq_score < 0.8
+          for: 10m
+          labels:
+            tier: "P2"
+            owner: "team-platform"
+            runbook_url: "https://runbooks.internal/dq-score-low"
+          annotations:
+            summary: "DQ score for domain {{ $labels.domain }} is below 80% over the last 24h"
+
+        - alert: ControlTowerDown
+          expr: absent(control_tower_up) or control_tower_up == 0
+          for: 2m
+          labels:
+            tier: "P1"
+            owner: "team-platform"
+            runbook_url: "https://runbooks.internal/control-tower-down"
+          annotations:
+            summary: "Control Tower itself is down - plan §11 SPOF mitigation: it must be monitored like any other service. All pipeline/SLA/DQ visibility is currently blind."
+
+        - alert: PipelineObservabilityDeadMansSwitch
+          expr: vector(1)
+          labels:
+            tier: "dead-mans-switch"
+            owner: "team-platform"
+          annotations:
+            summary: "Always-firing heartbeat - silence means the alert pipeline to email is broken, not that everything is healthy (plan §3.4)."

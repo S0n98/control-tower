@@ -1,0 +1,146 @@
+# Daily digest (plan §4.6 / §8): the only way P3 alerts (and a rollup of
+# everything else) reach a human without paging anyone. Queries the Control
+# Tower Postgres directly - this is the reason SLA/DQ facts live there
+# (plan §1): a 7d Prometheus retention can't answer "yesterday's compliance".
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: control-tower-daily-digest
+  namespace: monitoring
+spec:
+  schedule: "0 7 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: daily-digest
+              image: docker.io/library/control-tower:latest
+              imagePullPolicy: Never
+              env:
+                - name: CONTROL_TOWER_DSN
+                  valueFrom:
+                    secretKeyRef: { name: control-tower-dsn, key: CONTROL_TOWER_DSN }
+                - name: SMTP_HOST
+                  value: mailhog.monitoring.svc.cluster.local
+                - name: SMTP_PORT
+                  value: "1025"
+                - name: DIGEST_TO
+                  value: "team-platform@company.internal"
+              command: ["python3", "/scripts/daily_digest.py"]
+              volumeMounts:
+                - name: script
+                  mountPath: /scripts
+          volumes:
+            - name: script
+              configMap:
+                name: daily-digest-script
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: daily-digest-script
+  namespace: monitoring
+data:
+  daily_digest.py: |
+    import os, smtplib, psycopg
+    from email.mime.text import MIMEText
+    from psycopg.rows import dict_row
+
+    conn = psycopg.connect(os.environ["CONTROL_TOWER_DSN"], row_factory=dict_row, autocommit=True)
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT p.domain,
+               count(*) FILTER (WHERE pr.status = 'success') AS successes,
+               count(*) FILTER (WHERE pr.status = 'failed') AS failures
+        FROM pipeline p
+        LEFT JOIN pipeline_run pr ON pr.pipeline_id = p.pipeline_id
+            AND pr.started_at > now() - interval '24 hours'
+        GROUP BY p.domain ORDER BY p.domain
+    """)
+    by_domain = cur.fetchall()
+
+    cur.execute("""
+        SELECT pipeline_id, sla_type, breach_minutes, evaluated_at FROM sla_evaluation
+        WHERE result = 'breached' AND evaluated_at > now() - interval '24 hours'
+        ORDER BY evaluated_at DESC LIMIT 50
+    """)
+    breaches = cur.fetchall()
+
+    cur.execute("""
+        SELECT p.domain,
+               round(100.0 * count(*) FILTER (WHERE dq.status = 'pass') / GREATEST(count(*), 1), 1) AS pass_pct
+        FROM dq_result dq JOIN pipeline p ON p.pipeline_id = dq.pipeline_id
+        WHERE dq.evaluated_at > now() - interval '24 hours'
+        GROUP BY p.domain ORDER BY p.domain
+    """)
+    dq_by_domain = cur.fetchall()
+
+    cur.execute("""
+        SELECT pipeline_id, duration_s FROM pipeline_run
+        WHERE started_at > now() - interval '24 hours' AND duration_s IS NOT NULL
+        ORDER BY duration_s DESC LIMIT 5
+    """)
+    slowest = cur.fetchall()
+
+    lines = ["Data Platform Control Tower - Daily Digest", "=" * 44, ""]
+    lines.append("Runs by domain (24h):")
+    for r in by_domain:
+        lines.append(f"  {r['domain']}: {r['successes']} succeeded, {r['failures']} failed")
+    lines.append("")
+    lines.append(f"SLA breaches (24h): {len(breaches)}")
+    for b in breaches[:20]:
+        lines.append(f"  {b['evaluated_at']}  {b['pipeline_id']}  {b['sla_type']}"
+                      + (f"  ({b['breach_minutes']:.1f}m over)" if b['breach_minutes'] else ""))
+    lines.append("")
+    lines.append("DQ score by domain (24h):")
+    for r in dq_by_domain:
+        lines.append(f"  {r['domain']}: {r['pass_pct']}% checks passing")
+    lines.append("")
+    lines.append("Top 5 slowest runs (24h):")
+    for r in slowest:
+        lines.append(f"  {r['pipeline_id']}: {r['duration_s']:.0f}s")
+
+    body = "\n".join(lines)
+    msg = MIMEText(body)
+    msg["Subject"] = "[Daily Digest] Data Platform Control Tower"
+    msg["From"] = "control-tower@company.internal"
+    msg["To"] = os.environ["DIGEST_TO"]
+
+    with smtplib.SMTP(os.environ["SMTP_HOST"], int(os.environ["SMTP_PORT"])) as s:
+        s.sendmail(msg["From"], [msg["To"]], msg.as_string())
+
+    print("digest sent:\n" + body)
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: control-tower-daily-digest-manual-test
+  namespace: monitoring
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: daily-digest
+          image: docker.io/library/control-tower:latest
+          imagePullPolicy: Never
+          env:
+            - name: CONTROL_TOWER_DSN
+              valueFrom:
+                secretKeyRef: { name: control-tower-dsn, key: CONTROL_TOWER_DSN }
+            - name: SMTP_HOST
+              value: mailhog.monitoring.svc.cluster.local
+            - name: SMTP_PORT
+              value: "1025"
+            - name: DIGEST_TO
+              value: "team-platform@company.internal"
+          command: ["python3", "/scripts/daily_digest.py"]
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+      volumes:
+        - name: script
+          configMap: { name: daily-digest-script }

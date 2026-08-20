@@ -1,0 +1,155 @@
+{
+  "title": "NiFi",
+  "uid": "pipeline-nifi",
+  "tags": [
+    "pipeline",
+    "nifi"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "JVM heap used vs max",
+      "description": "NiFi's JVM heap usage vs configured max, from the built-in PrometheusReportingTask - sustained proximity to max risks GC pauses or an OOM crash.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "nifi_jvm_heap_used",
+          "legendFormat": "used"
+        },
+        {
+          "expr": "nifi_jvm_heap_max",
+          "legendFormat": "max"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Connection queue depth vs backpressure threshold",
+      "description": "Per-connection queue fill percentage - approaching 80% (the red threshold line) means that connection is at risk of triggering backpressure and stalling upstream processors.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "nifi_queued_percent",
+          "legendFormat": "{{connection_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Processor throughput (flow files / 5m)",
+      "description": "Flow files emitted per processor over a 5-minute rate window - a processor whose throughput drops to zero while others keep moving is a likely stall point.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (processor_name) (rate(nifi_flow_files_out[5m]))",
+          "legendFormat": "{{processor_name}}"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Bulletin log (current)",
+      "description": "Currently-active NiFi bulletins (nifi_bulletin_current > 0) - WARN/ERROR events raised by individual processors, not covered by the JVM/queue-depth metrics above.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "nifi_bulletin_current > 0",
+          "format": "table",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "nifi-app.log (ERROR/WARN)",
+      "description": "Log message text (extracted from fluentbit's JSON envelope, not the raw JSON line) containing 'error' or 'warn' (case-insensitive), from nifi-app.log.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "expr": "{job=\"fluentbit\", kubernetes_namespace_name=\"nifi\"} | json | line_format \"{{.log}}\" |~ \"(?i)error|warn\""
+        }
+      ]
+    }
+  ]
+}

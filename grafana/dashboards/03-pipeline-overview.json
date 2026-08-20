@@ -1,0 +1,370 @@
+{
+  "title": "Pipeline Overview",
+  "uid": "pipeline-overview",
+  "tags": [
+    "pipeline",
+    "control-tower"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 2,
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "domain",
+        "label": "Domain",
+        "type": "query",
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "postgres",
+          "uid": "control-tower-postgres"
+        },
+        "query": "SELECT DISTINCT domain FROM pipeline ORDER BY domain",
+        "refresh": 2
+      },
+      {
+        "name": "engine",
+        "label": "Engine",
+        "type": "query",
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "postgres",
+          "uid": "control-tower-postgres"
+        },
+        "query": "SELECT DISTINCT lower(jsonb_array_elements(components_json)->>'type') AS engine FROM pipeline ORDER BY 1",
+        "refresh": 2
+      },
+      {
+        "name": "status",
+        "label": "Status",
+        "type": "custom",
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "query": "success,running,failed,unknown"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Total Pipelines",
+      "description": "Distinct pipelines matching the filters above with at least one run started within the selected dashboard time range (top-right picker). A pipeline with no runs in the window is not counted here even if registered - for the full registry regardless of activity, query the `pipeline` table directly.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT count(DISTINCT p.pipeline_id) FROM pipeline p JOIN LATERAL (SELECT DISTINCT lower(c->>'type') AS engine FROM jsonb_array_elements(p.components_json) c) comp ON true JOIN pipeline_run pr ON pr.pipeline_id = p.pipeline_id WHERE p.enabled AND p.domain IN ($domain) AND comp.engine IN ($engine) AND pr.status IN ($status) AND pr.started_at BETWEEN $__timeFrom() AND $__timeTo()"
+        }
+      ],
+      "options": {
+        "graphMode": "none"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Running",
+      "description": "Distinct pipelines whose latest run is currently in progress - current state, not bound to the time range picker (a long-running streaming job's started_at can be far outside the selected window).",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 0
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT count(DISTINCT p.pipeline_id) FROM pipeline p LEFT JOIN LATERAL (SELECT DISTINCT lower(c->>'type') AS engine FROM jsonb_array_elements(p.components_json) c) comp ON true LEFT JOIN LATERAL (SELECT status FROM pipeline_run WHERE pipeline_id = p.pipeline_id ORDER BY started_at DESC NULLS LAST LIMIT 1) pr ON true WHERE p.enabled AND p.domain IN ($domain) AND comp.engine IN ($engine) AND COALESCE(pr.status, 'unknown') IN ($status) AND pr.status = 'running'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "blue",
+            "mode": "fixed"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "none",
+        "colorMode": "value"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Failed (latest run)",
+      "description": "Distinct pipelines whose latest run status is 'failed' - current state, not bound to the time range picker.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 0
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT count(DISTINCT p.pipeline_id) FROM pipeline p LEFT JOIN LATERAL (SELECT DISTINCT lower(c->>'type') AS engine FROM jsonb_array_elements(p.components_json) c) comp ON true LEFT JOIN LATERAL (SELECT status FROM pipeline_run WHERE pipeline_id = p.pipeline_id ORDER BY started_at DESC NULLS LAST LIMIT 1) pr ON true WHERE p.enabled AND p.domain IN ($domain) AND comp.engine IN ($engine) AND COALESCE(pr.status, 'unknown') IN ($status) AND pr.status = 'failed'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "none",
+        "colorMode": "value"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "SLA Breached (now)",
+      "description": "Distinct pipelines currently in a breached state right now (pipeline_current_sla_status) - a live snapshot, not a 24h event count. For \"who missed SLA at some point today\", see the Control Tower's \"SLA Misses (24h)\" tile.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT count(DISTINCT p.pipeline_id) FROM pipeline p LEFT JOIN LATERAL (SELECT DISTINCT lower(c->>'type') AS engine FROM jsonb_array_elements(p.components_json) c) comp ON true LEFT JOIN LATERAL (SELECT status FROM pipeline_run WHERE pipeline_id = p.pipeline_id ORDER BY started_at DESC NULLS LAST LIMIT 1) pr ON true JOIN pipeline_current_sla_status sla ON sla.pipeline_id = p.pipeline_id WHERE p.enabled AND p.domain IN ($domain) AND comp.engine IN ($engine) AND COALESCE(pr.status, 'unknown') IN ($status) AND sla.overall_result = 'breached'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "none",
+        "colorMode": "value"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Success rate (selected time range)",
+      "description": "Now bound to the dashboard's time-range picker (top-right) via $__timeFrom()/$__timeTo() - it previously ignored the picker entirely and always hardcoded a fixed 24h window, which is why changing the time range appeared to do nothing. The other stat tiles in this row (Pipelines/Running/Failed/SLA Breached) are deliberately NOT time-bound - they show current live state, not a historical window, so the picker correctly has no effect on those.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT CASE WHEN count(*) FILTER (WHERE pr.status IN ('success','failed')) = 0 THEN 100.0 ELSE round(100.0 * count(*) FILTER (WHERE pr.status = 'success') / count(*) FILTER (WHERE pr.status IN ('success','failed')), 1) END FROM pipeline p JOIN LATERAL (SELECT DISTINCT lower(c->>'type') AS engine FROM jsonb_array_elements(p.components_json) c) comp ON true JOIN pipeline_run pr ON pr.pipeline_id = p.pipeline_id WHERE p.enabled AND p.domain IN ($domain) AND comp.engine IN ($engine) AND pr.started_at BETWEEN $__timeFrom() AND $__timeTo()"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 90
+              },
+              {
+                "color": "green",
+                "value": 98
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "none"
+      }
+    },
+    {
+      "type": "table",
+      "title": "Pipelines",
+      "description": "Pipelines with a successful run in the selected time range, PLUS any pipeline currently running or currently failed regardless of when that run started (matching the Running/Failed stat tiles above, which are also not time-bound) - a pipeline whose only activity is an old success outside the window is not shown. Click a row to open Pipeline Detail. Also filtered by the Domain/Engine/Status variables above.",
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "control-tower-postgres"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT p.pipeline_id AS \"Pipeline\", comp.engine AS \"Engine\", CASE WHEN pr.status = 'running' THEN 'Running' ELSE to_char(pr.started_at, 'HH24:MI') END AS \"Last Run\", CASE WHEN pr.status = 'running' THEN CASE WHEN EXTRACT(EPOCH FROM now() - pr.started_at) >= 86400 THEN floor(EXTRACT(EPOCH FROM now() - pr.started_at) / 86400)::int || 'd' WHEN EXTRACT(EPOCH FROM now() - pr.started_at) >= 3600 THEN floor(EXTRACT(EPOCH FROM now() - pr.started_at) / 3600)::int || 'h' ELSE floor(EXTRACT(EPOCH FROM now() - pr.started_at) / 60)::int || 'm' END WHEN pr.duration_s IS NULL THEN 'n/a' WHEN pr.duration_s >= 86400 THEN floor(pr.duration_s / 86400)::int || 'd' WHEN pr.duration_s >= 3600 THEN floor(pr.duration_s / 3600)::int || 'h' ELSE floor(pr.duration_s / 60)::int || 'm' END AS \"Duration\", CASE WHEN p.sla_json ? 'max_duration_minutes' THEN (p.sla_json->>'max_duration_minutes') || 'm max' WHEN p.sla_json ? 'freshness_target_minutes' THEN 'REALTIME' ELSE 'n/a' END AS \"SLA\", CASE WHEN pr.status = 'failed' THEN 'failed' WHEN sla.overall_result = 'breached' THEN 'breached' WHEN pr.status = 'running' THEN 'running' WHEN pr.status = 'success' THEN 'success' ELSE 'unknown' END AS \"Status\" FROM pipeline p JOIN LATERAL (SELECT DISTINCT initcap(c->>'type') AS engine FROM jsonb_array_elements(p.components_json) c) comp ON true JOIN LATERAL (SELECT * FROM pipeline_run WHERE pipeline_id = p.pipeline_id ORDER BY started_at DESC NULLS LAST LIMIT 1) pr ON true LEFT JOIN pipeline_current_sla_status sla ON sla.pipeline_id = p.pipeline_id WHERE p.enabled AND p.domain IN ($domain) AND lower(comp.engine) IN ($engine) AND pr.status IN ($status) AND pr.status IN ('running','success','failed') AND (pr.started_at BETWEEN $__timeFrom() AND $__timeTo() OR pr.status IN ('running','failed')) ORDER BY p.domain, p.pipeline_id"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Pipeline"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open Pipeline Detail",
+                    "url": "/d/pipeline-detail-l3?var-pipeline_id=${__value.text}"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Status"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "success": {
+                        "text": "\ud83d\udfe2 SUCCESS",
+                        "color": "green"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "running": {
+                        "text": "\ud83d\udd35 RUNNING",
+                        "color": "blue"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "failed": {
+                        "text": "\ud83d\udd34 FAILED",
+                        "color": "red"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "breached": {
+                        "text": "\ud83d\udd34 BREACHED",
+                        "color": "red"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "unknown": {
+                        "text": "\u26aa UNKNOWN",
+                        "color": "semi-dark-orange"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

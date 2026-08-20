@@ -1,0 +1,14 @@
+pipeline_id: full_pipeline_demo
+domain: platform
+tier: P1
+owner: team-platform
+owner_email: team-platform@company.internal
+schedule: "manual"
+sla:
+  max_duration_minutes: 5
+components:
+  - type: airflow
+    id: full_pipeline_demo
+    namespace: airflow
+outputs: []
+upstream: []
