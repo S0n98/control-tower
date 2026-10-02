@@ -197,67 +197,12 @@
     },
     {
       "type": "stat",
-      "title": "Node status",
-      "description": "Percentage of node-exporter targets reporting up, in the same HEALTHY/DEGRADED/DOWN visual language as the L1 Control Tower's PLATFORM tile. Click through to the full Node Exporter dashboard for per-node CPU/memory/disk/network detail.",
+      "title": "Nodes Up",
+      "description": "How many node-exporter targets are currently reporting up, out of how many are known. Turns red the moment any node drops. Click through to the full Node Exporter dashboard for per-node CPU/memory/disk/network detail.",
       "gridPos": {
-        "h": 6,
-        "w": 16,
+        "h": 7,
+        "w": 24,
         "x": 0,
-        "y": 8
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "expr": "avg(up{job=\"node-exporter\"}) * 100",
-          "instant": true
-        }
-      ],
-      "options": {
-        "graphMode": "none",
-        "textMode": "value",
-        "colorMode": "background",
-        "justifyMode": "center"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "min": 0,
-          "max": 100,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 50 },
-              { "color": "green", "value": 100 }
-            ]
-          },
-          "mappings": [
-            { "type": "value", "options": { "100": { "text": "🟢 ALL NODES UP" } } },
-            { "type": "range", "options": { "from": 50, "to": 99.999, "result": { "text": "🟡 NODES DEGRADED" } } },
-            { "type": "range", "options": { "from": 0, "to": 49.999, "result": { "text": "🔴 NODES DOWN" } } }
-          ]
-        },
-        "overrides": []
-      },
-      "links": [
-        {
-          "title": "Open Node Exporter dashboard",
-          "url": "/d/7d57716318ee0dddbac5a7f451fb7753",
-          "targetBlank": false
-        }
-      ]
-    },
-    {
-      "type": "stat",
-      "title": "Nodes up / total",
-      "description": "Exact counts behind the Node status badge - how many node-exporter targets are up out of how many are known.",
-      "gridPos": {
-        "h": 6,
-        "w": 8,
-        "x": 16,
         "y": 8
       },
       "datasource": {
@@ -268,13 +213,13 @@
         {
           "refId": "A",
           "expr": "count(up{job=\"node-exporter\"} == 1)",
-          "legendFormat": "up",
+          "legendFormat": "🟢 Nodes Up",
           "instant": true
         },
         {
           "refId": "B",
           "expr": "count(up{job=\"node-exporter\"})",
-          "legendFormat": "total",
+          "legendFormat": "Total Nodes",
           "instant": true
         }
       ],
@@ -286,8 +231,12 @@
           "fields": "",
           "values": false
         },
+        "text": {
+          "valueSize": 48,
+          "titleSize": 16
+        },
         "textMode": "value_and_name",
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "center",
         "orientation": "horizontal"
@@ -297,10 +246,8 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
             ]
           }
         },
@@ -308,14 +255,13 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "up"
+              "options": "🟢 Nodes Up"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
-                  "mode": "fixed",
-                  "fixedColor": "green"
+                  "mode": "thresholds"
                 }
               }
             ]
@@ -323,14 +269,14 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "total"
+              "options": "Total Nodes"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "text"
+                  "fixedColor": "blue"
                 }
               }
             ]
@@ -353,7 +299,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 15
       },
       "datasource": {
         "type": "postgres",
@@ -374,7 +320,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 22
       },
       "datasource": {
         "type": "prometheus",

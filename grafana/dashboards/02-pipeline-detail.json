@@ -25,7 +25,7 @@
           "uid": "control-tower-postgres"
         },
         "query": "SELECT pipeline_id FROM pipeline ORDER BY pipeline_id",
-        "refresh": 1,
+        "refresh": 2,
         "current": {
           "text": "dq_tier_a_checks",
           "value": "dq_tier_a_checks"
