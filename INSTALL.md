@@ -6,10 +6,31 @@ air-gapped Kubernetes cluster. It does not install the data platform being obser
 a separate, product-specific concern; see "Data platform prerequisite" below for what
 needs to exist first and how to check.
 
-Every command here was run for real against this repo's own deployment (a single-node
-RKE2 cluster) — this isn't a theoretical procedure. Two real runtime-internet dependencies
-were found and removed while writing this guide (see §0.3) specifically so the result is
-actually offline-safe, not just "worked in a sandbox that happened to have internet."
+Every command here was run against this repo's own deployment (a single-node RKE2
+cluster). The result is offline-safe: nothing fetches from the internet at runtime (§0.3).
+
+## Automated install
+
+`scripts/offline-install.sh` runs this whole guide as a script. Copy
+`scripts/offline.env.example` to `offline.env` and edit it, then:
+
+```bash
+# builder (internet): charts, images, custom builds -> /root/monitor-offline.tar.gz
+./scripts/offline-install.sh prepare
+
+# every node (air-gapped), from the extracted bundle directory:
+./repo/scripts/offline-install.sh load
+
+# any host with kubectl:
+./repo/scripts/offline-install.sh install            # all steps, in order
+./repo/scripts/offline-install.sh install dq         # or re-run one step
+./repo/scripts/offline-install.sh verify             # §4 checklist
+```
+
+The script finds chart images with `helm template` instead of a fixed list, sets Grafana's
+folder provisioning (§3.4) at install time instead of patching it afterwards, and never
+runs `helm upgrade`. The sections below document what each step does and are the
+reference if a step fails.
 
 ## §0. Before you start
 
@@ -39,24 +60,19 @@ their own installation). Confirm what you're pointing the Control Tower at:
 kubectl get pods -A | grep -E "nifi|airflow|spark-operator|flink"
 ```
 
-### 0.3 Two runtime-internet dependencies found and removed
+### 0.3 No runtime internet access
 
-While preparing this guide, two places in the live deployment turned out to fetch from
-the internet **at runtime**, which is invisible in a sandbox with outbound access but a
-hard failure air-gapped. Both are already fixed in this repo's current state — mentioned
-here so you know why `airflow/Dockerfile` exists and why the daily-digest CronJob points
-at `control-tower:latest` instead of bare `python:3.12-slim`:
+Two things fetch from the internet at runtime in a connected setup. In an air-gapped install
+both are replaced by prebuilt images:
 
-1. `_PIP_ADDITIONAL_REQUIREMENTS: "trino kubernetes httpx"` on the Airflow scheduler/
-   dag-processor re-installs from PyPI on every pod start. Fixed by baking those three
-   packages into a custom image at build time instead (`airflow/Dockerfile`, built in §1.3).
-2. The daily-digest CronJob ran `pip install psycopg[binary]` at container start. Fixed
-   by pointing it at the already-built `control-tower:latest` image, which has `psycopg`
-   baked in via `control-tower/requirements.txt` already.
+1. **Airflow packages.** A connected deployment sets `_PIP_ADDITIONAL_REQUIREMENTS: "trino
+   kubernetes httpx"` on the scheduler and dag-processor, which reinstalls from PyPI on every
+   pod start. Offline, bake them into `airflow/Dockerfile` (built in §1.3, applied in §3.13).
+2. **Daily digest CronJob.** It uses the already-built `control-tower:latest` image, which has
+   `psycopg` baked in, rather than installing it at start.
 
-If you find a third spot doing this later, the fix pattern is always the same: move the
-`pip install` from a `command:` into a `Dockerfile`, build it on the builder machine, ship
-the resulting image instead of the base image + a runtime install step.
+If you add anything else that runs `pip install` in a `command:`, move it into a Dockerfile
+the same way.
 
 ---
 
@@ -96,9 +112,8 @@ for img in $IMAGES; do
 done
 ```
 
-`python:3.12-slim` is only needed as the `control-tower` build's base layer (§1.3) — it
-does not need to be imported separately on the target once that image is built, but
-saving it here means you can rebuild `control-tower` later without re-fetching it.
+`python:3.12-slim` is only the base layer for the `control-tower` build (§1.3); it does not
+need importing on the target.
 
 ### 1.2 Fetch Helm charts as local archives
 
@@ -359,6 +374,7 @@ Nothing else changes — the routing/grouping/inhibition logic is relay-agnostic
 
 ```bash
 kubectl apply -f alerting/control-tower-rules.yaml
+kubectl apply -f alerting/prometheus-rules.yaml    # per-engine NiFi/Spark/Flink/Airflow rules
 kubectl -n monitoring create secret generic alertmanager-kube-prometheus-stack-alertmanager \
   --from-file=alertmanager.yaml=alerting/alertmanager-config.yaml \
   --dry-run=client -o yaml | kubectl apply -f -
@@ -419,11 +435,9 @@ for f in "${!FOLDERS[@]}"; do
 done
 ```
 
-Also move the kube-prometheus-stack-bundled dashboards (Kubernetes/Node Exporter/etc,
-already deployed by §3.2) into folders `07. Kubernetes` and `08. VM & Infrastructure` the
-same way — see the annotate loop in the session history / `README.md`'s Layout section
-for the exact ConfigMap name list, or just leave them in the default folder if you don't
-care about matching this build's exact IA.
+Optionally, annotate the dashboards bundled with kube-prometheus-stack (Kubernetes, Node
+Exporter, etc.) with `grafana_folder="07. Kubernetes"` and `"08. VM & Infrastructure"` the same
+way; otherwise they stay in the default folder.
 
 ---
 
@@ -452,7 +466,6 @@ Work through this in order — each depends on the one before it:
 
 ## §5. Troubleshooting
 
-Read `CLAUDE.md`'s "Gotchas" section first — it covers the containerd version mismatch,
-the Postgres `round()` type error, the folder-slash bug, the SLA-status view invariant, the
-MinIO Operator reconciling away manual patches, Marquez's hardcoded credentials, and the
-`marquez-web` port env var, all found and fixed during this build's own installation.
+See the "Gotchas" section of `CLAUDE.md`: containerd/`ctr` mismatch, image index vs manifest,
+Postgres `round()` typing, Grafana folder names containing `/`, the SLA-status view,
+MinIO Operator reconciliation, Marquez credentials and the `marquez-web` port variable.

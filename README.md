@@ -1,16 +1,10 @@
 # Data Observability / Control Tower
 
-Deployed and verified against the real `default`/`rag` single-node RKE2 cluster on this
-host. Full design rationale lives in the plans this repo was generated from:
-`/root/.claude/plans/nifty-doodling-quilt.md` (original infra-health plan, Phase 1) and
-the Control Tower build plan the user supplied directly (Phase 2, described below).
-
-**Everything under this README is real and running**, not a template — every query in
-every dashboard, every alert route, every DQ check has been verified end-to-end against
-live data during this build (real emails landed in MailHog, real breaches were caught by
-the SLA engine, real lineage events landed in Marquez). Where something doesn't exist in
-this environment (Kafka, a second cluster, >10 VMs, an org SMTP relay), that's called out
-explicitly rather than silently assumed.
+Monitoring stack for a single-node RKE2 cluster: Prometheus, Grafana, Loki and Alertmanager,
+plus a **Control Tower** service that tracks pipeline runs, SLAs, data quality and lineage
+across NiFi, Spark, Flink and Airflow. Everything in this repo matches a real deployed
+resource, not a template. For a fresh or air-gapped install run `scripts/offline-install.sh` (documented in `INSTALL.md`); for operational
+notes and gotchas see `CLAUDE.md`.
 
 ## Why a Control Tower, not just more Prometheus
 
@@ -44,29 +38,27 @@ live in Postgres; Prometheus only sees the current-state summary.
                           Marquez (OpenLineage events + declared coarse edges)
 ```
 
-## What's real vs. what the original plan assumed
+## Scope
 
-The build plan this was generated from assumes an **air-gapped, 2-cluster (data +
-monitoring), >10 VM, >100 pipeline** production environment with an existing
-Elasticsearch/Kibana stack and an org SMTP relay. This host is a **single-node RKE2
-cluster** with a handful of sample pipelines. Deviations, all deliberate and documented
-in the relevant files:
-
-| Plan assumption | Reality here | What was done |
-|---|---|---|
-| 2 K8s clusters (data + monitoring) | 1 single-node cluster (`rag`) | Everything deployed in one cluster's `monitoring`/`airflow`/`flink`/`spark-operator`/`nifi`/`default` namespaces. |
-| Existing Elasticsearch + Kibana for logs | Loki + Grafana Explore already built (earlier phase of this session) | Kept Loki rather than standing up a second log stack - same LogQL/Grafana integration, far lighter for one node. |
-| Org SMTP relay | None in this sandbox | **MailHog** deployed (`alerting/mailhog.yaml`) as a real SMTP catcher - emails are genuinely sent and inspectable at `:30502`, not mocked. Swap Alertmanager's `smtp_smarthost` to the real relay in production; nothing else changes. |
-| Kafka in the critical path (marked "?" in the plan) | No Kafka broker exists here at all | `kafka_to_iceberg_demo` is registered-and-permanently-failing on purpose (see `registry/kafka_to_iceberg_demo.yaml`) so the SLA/alerting path has a real broken target to prove itself against. No `kafka-lag-exporter` deployed - nothing to point it at. |
-| >100 pipelines/DAGs, >10 VMs | 7 registered pipelines, 1 VM (this host) | Architecture is the same; only the fleet size differs. `registry/*.yaml` is the pattern for adding real ones. |
-| OpenLineage auto-instrumentation (openlineage-spark jar, airflow-provider-openlineage) | Would need custom Spark/Airflow image rebuilds | Not done (documented as follow-up). Instead: Control Tower emits real OpenLineage START/COMPLETE events for jobs it observes directly, plus declared coarse edges (`/lineage/ingest`) for the NiFi/Kafka boundary - same protocol, verified landing in Marquez with correct duration/dataset facets. |
-| Column-level DQ metadata pulled from a catalog | Not built | Tier-A not-null/primary-key declarations are hardcoded per-dataset in `dq/dq_tier_a_dag.py` rather than sourced from `registry/*.yaml` - registry has no column-schema field yet. |
-| Run_id propagated into structured JSON logs for one-click correlation | Sample workloads print plain-text logs | L3 dashboard's log panel correlates by namespace instead, with the limitation documented inline in the panel description. |
+- **One cluster, one VM, 7 registered pipelines.** The architecture scales to more; only the
+  fleet is small. `registry/*.yaml` is the pattern for adding real pipelines.
+- **Logs:** Loki + Fluent Bit, queried through Grafana Explore.
+- **Email:** MailHog (`alerting/mailhog.yaml`) catches every alert and digest email. For a real
+  SMTP relay, change `smtp_smarthost` in `alerting/alertmanager-config.yaml`; nothing else changes.
+- **Kafka:** no broker exists here. `kafka_to_iceberg_demo` is registered and permanently
+  failing on purpose, so the SLA/alerting path has a real broken target. Do not remove it.
+- **Lineage:** the Control Tower emits OpenLineage START/COMPLETE events for jobs it observes,
+  plus declared coarse edges via `/lineage/ingest`, all landing in Marquez. Spark/Airflow
+  OpenLineage auto-instrumentation is not installed (it would need custom images).
+- **DQ Tier-A column rules** (not-null, primary key) are hardcoded per dataset in
+  `dq/dq_tier_a_dag.py`; the registry has no column-schema field.
+- **Log correlation:** the L3 dashboard correlates logs by namespace, since the sample
+  workloads don't emit structured `run_id` logs.
 
 ## Layout
 
 ```
-registry/                          # pipeline registry (plan's git-versioned YAML, plan §4.1)
+registry/                          # pipeline registry (git-versioned YAML)
   LABELLING-STANDARD.md            # pipeline_id/domain/tier/owner/run_id convention
   *.yaml                           # one file per registered pipeline
   dags/trigger_flink_job.py        # the sample Airflow DAG, tagged per the labelling standard
@@ -98,6 +90,13 @@ dq/
                                     # create/patch SparkApplication and FlinkDeployment CRs
   daily-digest-cronjob.yaml        # 07:00 email digest (CronJob) + a one-off test Job pattern
 
+scripts/
+  offline-install.sh               # automated offline install: prepare / load / install / verify
+  offline.env.example              # settings for it (storage class, SMTP, NiFi, Airflow)
+
+airflow/
+  Dockerfile                       # Airflow image with trino/kubernetes/httpx baked in (offline installs)
+
 lineage/
   marquez.yaml, marquez-web.yaml   # Marquez API (:30500) + Web UI (:30501)
 
@@ -105,7 +104,7 @@ alerting/
   control-tower-rules.yaml         # PipelineSLABreached / PipelineFailed / PipelineUnregistered / DomainDQScoreLow / ControlTowerDown / DeadMansSwitch
   alertmanager-config.yaml         # routes on `tier` label: P1->page(4h repeat), P2->ticket(24h), P3->digest-only(null receiver)
   mailhog.yaml                     # SMTP catcher (:30502)
-  prometheus-rules.yaml            # earlier phase's per-system rules (NiFi/Spark/Flink/Airflow), superseded in priority by control-tower-rules.yaml but still valid
+  prometheus-rules.yaml            # per-engine rules (NiFi/Spark/Flink/Airflow), deployed as `pipeline-observability-rules`
 
 grafana/dashboards/                # each file is provisioned into a Grafana folder via the
                                     # grafana_folder ConfigMap annotation (kiwigrid/k8s-sidecar's
@@ -135,11 +134,6 @@ monitoring-cluster/                # live `helm get values` output for the 3 cor
 
 workload-cluster/                  # PodMonitor/ServiceMonitor CRDs + sample job manifests feeding L2
   podmonitors/, servicemonitors/, spark-sample-app.yaml, flink-sample-app.yaml
-
-nifi-vm/                           # reference-only: how to monitor a NiFi VM outside k8s (not used
-                                    # here - this environment's NiFi runs in-cluster - kept as the
-                                    # pattern for a genuinely off-cluster NiFi host)
-  grafana-agent-config.yaml, fluent-bit.conf, nifi_bulletin_exporter.py
 ```
 
 ## Access
@@ -161,11 +155,9 @@ nifi-vm/                           # reference-only: how to monitor a NiFi VM ou
   bypassing the executor/bundle-version lookup entirely. All 3 DAGs (`trigger_flink_job`,
   `dq_tier_a_checks`, `full_pipeline_demo`) are left **paused** for this reason - their cron
   schedules are documentation of intent, not actually driving real executor-based runs.
-- **`_PIP_ADDITIONAL_REQUIREMENTS` (trino/kubernetes/httpx on the Airflow scheduler and
-  dag-processor) fetches from PyPI at every container start** - this only works because this
-  build environment has outbound internet. **This will not work in a genuinely air-gapped
-  target** - see `INSTALL.md` for the offline-safe alternative (bake these into a custom
-  Airflow image ahead of time instead).
+- **Airflow packages are installed at pod start** (`_PIP_ADDITIONAL_REQUIREMENTS`: trino,
+  kubernetes, httpx), so this deployment needs PyPI access. Air-gapped installs use the
+  prebuilt image from `airflow/Dockerfile` instead; see `INSTALL.md` §3.13.
 - **NiFi's single-user auth tokens expire (~8-12h)** - the Control Tower's NiFi collector
   self-heals on a 401 by re-authenticating with mounted credentials (`nifi_collector.py`),
   but Prometheus's own direct PodMonitor scrape of NiFi's `/nifi-api/flow/metrics/prometheus`
@@ -183,4 +175,4 @@ nifi-vm/                           # reference-only: how to monitor a NiFi VM ou
 3. The Control Tower picks it up on its next 30s poll cycle automatically - no restart
    needed (registry sync runs every cycle).
 4. If it's not registered but is already running, `pipeline_unregistered` fires within
-   5 minutes (plan §2 enforcement) - that's the safety net for step 1 being skipped.
+   5 minutes - that's the safety net for step 1 being skipped.

@@ -1,5 +1,5 @@
-Labelling Standard (Control Tower plan §2)
-===========================================
+Labelling Standard
+==================
 
 Every executable unit in this environment carries these four identifiers,
 plus a propagated `run_id` where the unit is one instance of a pipeline run
